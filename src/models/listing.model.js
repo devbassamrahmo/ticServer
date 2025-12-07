@@ -172,9 +172,140 @@ async function deleteListing(id, dealer_id) {
   return result.rowCount > 0;
 }
 
+async function getFeaturedListingsForDealer(dealerId, { limit = 6 }) {
+  const result = await db.query(
+    `SELECT
+       l.*,
+       COALESCE(SUM(CASE WHEN e.event_type = 'view' THEN 1 END), 0) AS views,
+       COALESCE(SUM(CASE WHEN e.event_type IN ('whatsapp_click','call_click') THEN 1 END), 0) AS contacts
+     FROM listings l
+     LEFT JOIN listing_events e ON e.listing_id = l.id
+     WHERE l.dealer_id = $1
+       AND l.status = 'active'
+       AND l.is_featured = TRUE
+     GROUP BY l.id
+     ORDER BY l.created_at DESC
+     LIMIT $2`,
+    [dealerId, limit]
+  );
+
+  return result.rows;
+}
+
+// البحث العام (public search) لإعلانات معرض معيّن
+async function searchPublicListings(dealerId, filters = {}, pagination = {}) {
+  const {
+    city,
+    district,
+    purpose,          // "buy" | "rent"  -> إذا عندك حقل purpose
+    property_type,    // شقة, فيلا, أرض...
+    min_rooms,
+    max_rooms,
+    min_area,
+    max_area,
+    min_price,
+    max_price,
+    min_age,
+    max_age,
+  } = filters;
+
+  const page = Number(pagination.page) || 1;
+  const pageSize = Number(pagination.pageSize) || 12;
+  const offset = (page - 1) * pageSize;
+
+  const whereParts = [
+    'l.dealer_id = $1',
+    "l.status = 'active'",
+  ];
+  const params = [dealerId];
+  let idx = params.length + 1;
+
+  function addFilter(condition, value) {
+    if (value !== undefined && value !== null && value !== '') {
+      whereParts.push(condition.replace(/\?/g, `$${idx++}`));
+      params.push(value);
+    }
+  }
+
+  if (city) addFilter('l.city = ?', city);
+  if (district) addFilter('l.district = ?', district);
+  if (purpose) addFilter('l.purpose = ?', purpose);
+  if (property_type) addFilter('l.property_type = ?', property_type);
+
+  if (min_rooms) addFilter('l.rooms >= ?', Number(min_rooms));
+  if (max_rooms) addFilter('l.rooms <= ?', Number(max_rooms));
+
+  if (min_area) addFilter('l.area >= ?', Number(min_area));
+  if (max_area) addFilter('l.area <= ?', Number(max_area));
+
+  if (min_price) addFilter('l.price >= ?', Number(min_price));
+  if (max_price) addFilter('l.price <= ?', Number(max_price));
+
+  if (min_age) addFilter('l.age_years >= ?', Number(min_age));
+  if (max_age) addFilter('l.age_years <= ?', Number(max_age));
+
+  const whereClause = whereParts.join(' AND ');
+
+  // query القائمة
+  const listQuery = `
+    SELECT
+      l.*,
+      COALESCE(SUM(CASE WHEN e.event_type = 'view' THEN 1 END), 0) AS views,
+      COALESCE(SUM(CASE WHEN e.event_type IN ('whatsapp_click','call_click') THEN 1 END), 0) AS contacts
+    FROM listings l
+    LEFT JOIN listing_events e ON e.listing_id = l.id
+    WHERE ${whereClause}
+    GROUP BY l.id
+    ORDER BY l.created_at DESC
+    LIMIT ${pageSize} OFFSET ${offset}
+  `;
+
+  // query العدد الكلي
+  const countQuery = `
+    SELECT COUNT(*) AS total
+    FROM listings l
+    WHERE ${whereClause}
+  `;
+
+  const [listRes, countRes] = await Promise.all([
+    db.query(listQuery, params),
+    db.query(countQuery, params),
+  ]);
+
+  return {
+    items: listRes.rows,
+    total: Number(countRes.rows[0].total),
+    page,
+    pageSize,
+  };
+}
+
+// إعلان واحد (public) ومتأكدين إنه تابع لهالمعرض و active
+async function getPublicListingById(dealerId, listingId) {
+  const res = await db.query(
+    `SELECT
+       l.*,
+       COALESCE(SUM(CASE WHEN e.event_type = 'view' THEN 1 END), 0) AS views,
+       COALESCE(SUM(CASE WHEN e.event_type IN ('whatsapp_click','call_click') THEN 1 END), 0) AS contacts
+     FROM listings l
+     LEFT JOIN listing_events e ON e.listing_id = l.id
+     WHERE l.id = $1
+       AND l.dealer_id = $2
+       AND l.status = 'active'
+     GROUP BY l.id
+     LIMIT 1`,
+    [listingId, dealerId]
+  );
+
+  return res.rows[0] || null;
+}
+
 module.exports = {
   createListing,
   getListingsForDealer,
   updateListing,
   deleteListing,
+  getFeaturedListingsForDealer,
+  searchPublicListings,
+  getPublicListingById
 };
