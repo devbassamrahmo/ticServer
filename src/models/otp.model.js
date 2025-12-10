@@ -41,8 +41,35 @@ async function markOtpUsed(id) {
   );
 }
 
+async function saveOtpForPhone(phone, code) {
+  const expiresAt = new Date(Date.now() + 5 * 60 * 1000); // 5 دقائق
+
+  await db.query(
+    `INSERT INTO otp_codes (phone, code, expires_at)
+     VALUES ($1, $2, $3)`,
+    [phone, code, expiresAt]
+  );
+}
+
+async function verifyOtp(phone, code) {
+  const result = await db.query(
+    `SELECT *
+     FROM otp_codes
+     WHERE phone = $1
+       AND code = $2
+       AND expires_at > NOW()
+     ORDER BY created_at DESC
+     LIMIT 1`,
+    [phone, code]
+  );
+
+  return result.rows[0] || null;
+}
+
 module.exports = {
   createOtp,
   findValidOtp,
   markOtpUsed,
+  saveOtpForPhone,
+  verifyOtp
 };

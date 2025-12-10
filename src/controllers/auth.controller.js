@@ -9,33 +9,78 @@ function generateOtp() {
 }
 
 // POST /api/auth/request-otp
+// exports.requestOtp = async (req, res) => {
+//   try {
+//     let { phone } = req.body;
+
+//     if (!phone) {
+//       return res
+//         .status(400)
+//         .json({ success: false, message: 'رقم الهاتف مطلوب' });
+//     }
+
+//     phone = phone.trim();
+
+//     const code = generateOtp();
+//     const expiresAt = new Date(Date.now() + 5 * 60 * 1000); // بعد 5 دقائق
+
+//     await createOtp(phone, code, expiresAt);
+
+//     // TODO: إرسال SMS حقيقي لاحقاً
+//     return res.json({
+//       success: true,
+//       message: 'تم إرسال الكود',
+//       // فقط أثناء التطوير:
+//       debugCode: code,
+//     });
+//   } catch (err) {
+//     console.error('requestOtp error:', err);
+//     return res.status(500).json({ success: false, message: 'خطأ في السيرفر' });
+//   }
+// };
+
 exports.requestOtp = async (req, res) => {
   try {
-    let { phone } = req.body;
+    const { phone } = req.body;
 
     if (!phone) {
-      return res
-        .status(400)
-        .json({ success: false, message: 'رقم الهاتف مطلوب' });
+      return res.status(400).json({
+        success: false,
+        message: 'رقم الجوال مطلوب',
+      });
     }
 
-    phone = phone.trim();
+    // 1) توليد كود OTP
+    const code = Math.floor(100000 + Math.random() * 900000).toString(); // 6 digits
 
-    const code = generateOtp();
-    const expiresAt = new Date(Date.now() + 5 * 60 * 1000); // بعد 5 دقائق
+    // 2) حفظ الكود بالداتابيس/الذاكرة مرتبط بالـ phone
+    // مفترض أنك عامل موديل/جدول otp_codes:
+    // phone, code, expires_at, attempts ...
+    await saveOtpForPhone(phone, code);
 
-    await createOtp(phone, code, expiresAt);
+    // 3) إرسال SMS عبر Msegat
+    const smsResult = await sendOtpSms(phone, code);
 
-    // TODO: إرسال SMS حقيقي لاحقاً
+    if (!smsResult.success && !smsResult.disabled) {
+      // لو في مشكلة مع بوابة الـ SMS، ممكن ترجع error للفرونت
+      return res.status(500).json({
+        success: false,
+        message: 'فشل إرسال رسالة التحقق، حاول مرة أخرى',
+      });
+    }
+
+    // 4) رد للـ frontend
     return res.json({
       success: true,
-      message: 'تم إرسال الكود',
-      // فقط أثناء التطوير:
-      debugCode: code,
+      message: 'تم إرسال رمز التحقق',
+      // debugCode: code   // فقط في بيئة التطوير (لا تحطه في البرودكشن)
     });
   } catch (err) {
     console.error('requestOtp error:', err);
-    return res.status(500).json({ success: false, message: 'خطأ في السيرفر' });
+    return res.status(500).json({
+      success: false,
+      message: 'خطأ في السيرفر',
+    });
   }
 };
 
@@ -52,6 +97,17 @@ exports.verifyOtp = async (req, res) => {
 
     phone = phone.trim();
     code = code.trim();
+
+    // (اختياري) توحيد صيغة رقم الجوال
+    // مثال: ضيف +966 لو مو موجود
+    if (!phone.startsWith('+')) {
+      // عدل هالمنطق حسب طريقة تخزينك للأرقام
+      if (phone.startsWith('0')) {
+        phone = '+966' + phone.slice(1);
+      } else {
+        phone = '+966' + phone;
+      }
+    }
 
     const otpRow = await findValidOtp(phone, code);
     if (!otpRow) {
@@ -93,7 +149,9 @@ exports.verifyOtp = async (req, res) => {
     });
   } catch (err) {
     console.error('verifyOtp error:', err);
-    return res.status(500).json({ success: false, message: 'خطأ في السيرفر' });
+    return res
+      .status(500)
+      .json({ success: false, message: 'خطأ في السيرفر' });
   }
 };
 
@@ -160,3 +218,22 @@ exports.completeProfile = async (req, res) => {
     return res.status(500).json({ success: false, message: 'خطأ في السيرفر' });
   }
 };
+
+exports.logout = async (req, res) => {
+  try {
+    // حالياً ما عنا refresh tokens أو blacklist
+    // فالموضوع بيكون من جهة الفرونت (يمسح الـ token)
+
+    return res.json({
+      success: true,
+      message: 'تم تسجيل الخروج بنجاح',
+    });
+  } catch (err) {
+    console.error('logout error:', err);
+    return res.status(500).json({
+      success: false,
+      message: 'خطأ في السيرفر',
+    });
+  }
+};
+

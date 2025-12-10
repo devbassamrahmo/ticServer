@@ -277,3 +277,33 @@ exports.deleteSubUser = async (req, res) => {
     return res.status(500).json({ success: false, message: 'خطأ في السيرفر' });
   }
 };
+
+exports.getSubUsers = async (req, res) => {
+  try {
+    const ownerId = req.user.id;
+    const {
+      page,
+      pageSize,
+      city,
+      type,
+      status,   // "active" | "inactive"
+    } = req.query;
+
+    const result = await subUserModel.getSubUsers(
+      ownerId,
+      { city, type, status },
+      { page, pageSize }
+    );
+
+    return res.json({
+      success: true,
+      ...result,
+    });
+  } catch (err) {
+    console.error('getSubUsers error:', err);
+    return res.status(500).json({
+      success: false,
+      message: 'خطأ في السيرفر',
+    });
+  }
+};

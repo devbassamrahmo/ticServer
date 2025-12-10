@@ -19,7 +19,7 @@ router.post('/verify/nafath', accountController.verifyNafath);
 router.post('/verify/real-estate-license', accountController.verifyRealEstateLicense);
 
 // المستخدمون الفرعيون
-router.get('/sub-users', accountController.listSubUsers);
+router.get('/sub-users', accountController.getSubUsers);
 router.post('/sub-users', accountController.addSubUser);
 router.post('/sub-users/:id/toggle', accountController.toggleSubUser);
 router.delete('/sub-users/:id', accountController.deleteSubUser);

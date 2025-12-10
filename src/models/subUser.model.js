@@ -31,6 +31,80 @@ async function listSubUsers(ownerId, { page = 1, pageSize = 10 }) {
   };
 }
 
+async function getSubUsers(ownerId, filters = {}, pagination = {}) {
+  const {
+    city,
+    type,    // نوع المستخدم - مثال: "branch" | "individual" حسب ما انت تستخدم
+    status,  // "active" | "inactive"
+  } = filters;
+
+  const page = Number(pagination.page) || 1;
+  const pageSize = Number(pagination.pageSize) || 10;
+  const offset = (page - 1) * pageSize;
+
+  const whereParts = ['owner_id = $1'];
+  const params = [ownerId];
+  let idx = params.length + 1;
+
+  function addFilter(condition, value) {
+    if (value !== undefined && value !== null && value !== '') {
+      whereParts.push(condition.replace(/\?/g, `$${idx++}`));
+      params.push(value);
+    }
+  }
+
+  if (city) {
+    addFilter('city = ?', city);
+  }
+
+  if (type) {
+    // user_type عمودك في الجدول (عدّله لو الاسم مختلف)
+    addFilter('user_type = ?', type);
+  }
+
+  if (status === 'active') {
+    whereParts.push('is_active = TRUE');
+  } else if (status === 'inactive') {
+    whereParts.push('is_active = FALSE');
+  }
+
+  const whereClause = whereParts.join(' AND ');
+
+  const listQuery = `
+    SELECT
+      id,
+      full_name,
+      phone,
+      email,
+      city,
+      user_type,
+      is_active,
+      created_at
+    FROM sub_users
+    WHERE ${whereClause}
+    ORDER BY created_at DESC
+    LIMIT ${pageSize} OFFSET ${offset}
+  `;
+
+  const countQuery = `
+    SELECT COUNT(*) AS total
+    FROM sub_users
+    WHERE ${whereClause}
+  `;
+
+  const [listRes, countRes] = await Promise.all([
+    db.query(listQuery, params),
+    db.query(countQuery, params),
+  ]);
+
+  return {
+    items: listRes.rows,
+    total: Number(countRes.rows[0].total),
+    page,
+    pageSize,
+  };
+}
+
 async function createSubUser(ownerId, data) {
   const { full_name, phone, email, city } = data;
 
@@ -66,9 +140,12 @@ async function deleteSubUser(ownerId, subUserId) {
   return result.rowCount > 0;
 }
 
+
+
 module.exports = {
   listSubUsers,
   createSubUser,
   toggleSubUser,
   deleteSubUser,
+  getSubUsers
 };
