@@ -12,6 +12,7 @@ const accountRoutes = require('./routes/account.routes');
 const carRoutes = require('./routes/car.routes');
 const adminRoutes = require('./routes/admin.routes');
 const uploadRoutes = require('./routes/upload.routes');
+const devRoutes = require('./routes/dev.routes'); 
 
 const app = express();
 
@@ -32,5 +33,6 @@ app.use('/api/account', accountRoutes);
 app.use('/api/cars', carRoutes);
 app.use('/api/admin', adminRoutes);
 app.use('/api/upload', uploadRoutes);
+app.use('/api/dev', devRoutes);
 
 module.exports = app;

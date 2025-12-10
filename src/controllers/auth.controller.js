@@ -9,82 +9,86 @@ function generateOtp() {
 }
 
 // POST /api/auth/request-otp
-// exports.requestOtp = async (req, res) => {
-//   try {
-//     let { phone } = req.body;
-
-//     if (!phone) {
-//       return res
-//         .status(400)
-//         .json({ success: false, message: 'رقم الهاتف مطلوب' });
-//     }
-
-//     phone = phone.trim();
-
-//     const code = generateOtp();
-//     const expiresAt = new Date(Date.now() + 5 * 60 * 1000); // بعد 5 دقائق
-
-//     await createOtp(phone, code, expiresAt);
-
-//     // TODO: إرسال SMS حقيقي لاحقاً
-//     return res.json({
-//       success: true,
-//       message: 'تم إرسال الكود',
-//       // فقط أثناء التطوير:
-//       debugCode: code,
-//     });
-//   } catch (err) {
-//     console.error('requestOtp error:', err);
-//     return res.status(500).json({ success: false, message: 'خطأ في السيرفر' });
-//   }
-// };
-
 exports.requestOtp = async (req, res) => {
+  
   try {
-    const { phone } = req.body;
+    let { phone } = req.body;
 
     if (!phone) {
-      return res.status(400).json({
-        success: false,
-        message: 'رقم الجوال مطلوب',
-      });
+      return res
+        .status(400)
+        .json({ success: false, message: 'رقم الهاتف مطلوب' });
     }
 
-    // 1) توليد كود OTP
-    const code = Math.floor(100000 + Math.random() * 900000).toString(); // 6 digits
+    phone = phone.trim();
 
-    // 2) حفظ الكود بالداتابيس/الذاكرة مرتبط بالـ phone
-    // مفترض أنك عامل موديل/جدول otp_codes:
-    // phone, code, expires_at, attempts ...
-    await saveOtpForPhone(phone, code);
+    const code = generateOtp();
+    const expiresAt = new Date(Date.now() + 5 * 60 * 1000); // بعد 5 دقائق
 
-    // 3) إرسال SMS عبر Msegat
-    const smsResult = await sendOtpSms(phone, code);
+    await createOtp(phone, code, expiresAt);
 
-    if (!smsResult.success && !smsResult.disabled) {
-      // لو في مشكلة مع بوابة الـ SMS، ممكن ترجع error للفرونت
-      return res.status(500).json({
-        success: false,
-        message: 'فشل إرسال رسالة التحقق، حاول مرة أخرى',
-      });
-    }
-
-    // 4) رد للـ frontend
+    // TODO: إرسال SMS حقيقي لاحقاً
     return res.json({
       success: true,
-      message: 'تم إرسال رمز التحقق',
-      // debugCode: code   // فقط في بيئة التطوير (لا تحطه في البرودكشن)
+      message: 'تم إرسال الكود',
+      // فقط أثناء التطوير:
+      debugCode: code,
     });
   } catch (err) {
+    
     console.error('requestOtp error:', err);
-    return res.status(500).json({
-      success: false,
-      message: 'خطأ في السيرفر',
-    });
+    return res.status(500).json({ success: false, message: 'خطأ في السيرفر' });
   }
 };
 
+// exports.requestOtp = async (req, res) => {
+//   try {
+//     const { phone } = req.body;
+
+//     if (!phone) {
+//       return res.status(400).json({
+//         success: false,
+//         message: 'رقم الجوال مطلوب',
+//       });
+//     }
+
+//     // 1) توليد كود OTP
+//     const code = Math.floor(100000 + Math.random() * 900000).toString(); // 6 digits
+
+//     // 2) حفظ الكود بالداتابيس/الذاكرة مرتبط بالـ phone
+//     // مفترض أنك عامل موديل/جدول otp_codes:
+//     // phone, code, expires_at, attempts ...
+//     await saveOtpForPhone(phone, code);
+
+//     // 3) إرسال SMS عبر Msegat
+//     const smsResult = await sendOtpSms(phone, code);
+
+//     if (!smsResult.success && !smsResult.disabled) {
+//       // لو في مشكلة مع بوابة الـ SMS، ممكن ترجع error للفرونت
+//       return res.status(500).json({
+//         success: false,
+//         message: 'فشل إرسال رسالة التحقق، حاول مرة أخرى',
+//       });
+//     }
+
+//     // 4) رد للـ frontend
+//     return res.json({
+//       success: true,
+//       message: 'تم إرسال رمز التحقق',
+//       // debugCode: code   // فقط في بيئة التطوير (لا تحطه في البرودكشن)
+//     });
+//   } catch (err) {
+//     console.error('requestOtp error:', err);
+//     return res.status(500).json({
+//       success: false,
+//       message: 'خطأ في السيرفر',
+//     });
+//   }
+// };
+
+
 // POST /api/auth/verify-otp
+
 exports.verifyOtp = async (req, res) => {
   try {
     let { phone, code } = req.body;
