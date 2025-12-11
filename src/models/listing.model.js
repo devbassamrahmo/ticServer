@@ -1,6 +1,49 @@
 // src/models/listing.model.js
 const db = require('../config/db');
+// helper لتقصير عدد الصور وتنظيف الداتا
+function normalizeExtraData(extraData = {}) {
+  const data = { ...extraData };
 
+  // 1) حد أقصى 10 صور/فيديو
+  if (Array.isArray(data.images)) {
+    data.images = data.images.slice(0, 10);
+  } else if (data.images == null) {
+    data.images = [];
+  }
+
+  // 2) المميزات لازم تكون Array
+  if (!Array.isArray(data.features)) {
+    data.features = Array.isArray(data.features) ? data.features : [];
+  }
+
+  // 3) project_info.files موجودة بس للمشاريع
+  if (data.project_info && typeof data.project_info === 'object') {
+    const p = data.project_info;
+    p.is_project = Boolean(p.is_project);
+
+    p.files = p.files || {};
+    const filesKeys = ['brochure', 'unit_plans', 'payment_plan', 'price_table'];
+    filesKeys.forEach((k) => {
+      if (p.files[k] != null && typeof p.files[k] !== 'string') {
+        p.files[k] = String(p.files[k]);
+      }
+    });
+  }
+
+  // 4) ما نخزن معلومات رخصة الإعلان (بتنجيب من API ثاني)
+  const licenseKeys = [
+    'ad_license_number',
+    'ad_license_issue_date',
+    'ad_license_expiry_date',
+    'site_ad_number',
+    'ad_source',
+  ];
+  licenseKeys.forEach((k) => {
+    if (k in data) delete data[k];
+  });
+
+  return data;
+}
 // ملاحظة: مؤقتاً عم نستخدم user.id كـ dealer_id
 async function createListing(data) {
   const {
@@ -19,6 +62,8 @@ async function createListing(data) {
     extraData,
   } = data;
 
+  const normalizedData = normalizeExtraData(extraData || {});
+
   const result = await db.query(
     `INSERT INTO listings (
       dealer_id, site_id, type, title, description,
@@ -32,7 +77,7 @@ async function createListing(data) {
     RETURNING *`,
     [
       dealer_id,
-      site_id,
+      site_id || null,          // 👈 هون المهم: لو بعت 1 أو undefined بيصير NULL
       type,
       title,
       description,
@@ -43,7 +88,7 @@ async function createListing(data) {
       city,
       category,
       is_published ?? false,
-      extraData || {},
+      normalizedData,
     ]
   );
 
@@ -120,23 +165,28 @@ async function getListingsForDealer({
   };
 }
 
-module.exports = {
-  createListing,
-  getListingsForDealer,
-  updateListing,
-  deleteListing,
-};
-
 async function updateListing(id, dealer_id, fields) {
   const allowedFields = [
-    'title', 'description', 'price', 'currency',
-    'status', 'license_status', 'city',
-    'category', 'is_published', 'data',
+    'title',
+    'description',
+    'price',
+    'currency',
+    'status',
+    'license_status',
+    'city',
+    'category',
+    'is_published',
+    'data',
   ];
 
   const setParts = [];
   const params = [];
   let idx = 1;
+
+  // إذا في تعديل لـ data نطبّق normalizeExtraData
+  if (fields.data !== undefined) {
+    fields.data = normalizeExtraData(fields.data || {});
+  }
 
   for (const key of allowedFields) {
     if (fields[key] !== undefined) {
@@ -191,6 +241,8 @@ async function getFeaturedListingsForDealer(dealerId, { limit = 6 }) {
 
   return result.rows;
 }
+
+
 
 // البحث العام (public search) لإعلانات معرض معيّن
 async function searchPublicListings(dealerId, filters = {}, pagination = {}) {

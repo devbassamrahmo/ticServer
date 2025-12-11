@@ -11,40 +11,46 @@ async function createCarListing(dealerId, data) {
     category,
     condition,
     mileage,
-    mileage_unit,
     exterior_color,
     interior_color,
     price,
-    currency,
     fuel_type,
     transmission,
+    // ملاحظة: engine_size هون صارت نوع الدفع (FWD/RWD/AWD...)
     engine_size,
     cylinders,
     features,
     images,
     whatsapp_enabled,
-    phone_enabled
+    phone_enabled,
+    importer,
+    engine_power_hp
   } = data;
+
+  // نضمن إنو فينا Arrays ونحدّد الصور لـ 10
+  const normalizedFeatures = Array.isArray(features) ? features : [];
+  const normalizedImages = Array.isArray(images) ? images.slice(0, 10) : [];
 
   const result = await db.query(
     `INSERT INTO car_listings (
       dealer_id, title, description, brand, model, trim, year, category,
-      condition, mileage, mileage_unit, exterior_color, interior_color,
-      price, currency, fuel_type, transmission, engine_size, cylinders,
-      features, images, whatsapp_enabled, phone_enabled
+      condition, mileage, exterior_color, interior_color,
+      price, fuel_type, transmission, engine_size, cylinders,
+      features, images, whatsapp_enabled, phone_enabled, importer, engine_power_hp
     )
     VALUES (
       $1,$2,$3,$4,$5,$6,$7,$8,
-      $9,$10,$11,$12,$13,
-      $14,$15,$16,$17,$18,$19,
-      $20,$21,$22,$23
+      $9,$10,$11,$12,
+      $13,$14,$15,$16,$17,
+      $18,$19,$20,$21,$22,$23
     )
     RETURNING *`,
     [
       dealerId, title, description, brand, model, trim, year, category,
-      condition, mileage, mileage_unit, exterior_color, interior_color,
-      price, currency, fuel_type, transmission, engine_size, cylinders,
-      features || [], images || [], whatsapp_enabled, phone_enabled
+      condition, mileage, exterior_color, interior_color,
+      price, fuel_type, transmission, engine_size, cylinders,
+      normalizedFeatures, normalizedImages, whatsapp_enabled, phone_enabled,
+      importer, engine_power_hp
     ]
   );
 
@@ -98,11 +104,22 @@ async function getCarById(id, dealerId) {
 async function updateCarListing(id, dealerId, fields) {
   const allowed = [
     'title','description','brand','model','trim','year',
-    'category','condition','mileage','mileage_unit','exterior_color',
-    'interior_color','price','currency','fuel_type','transmission',
+    'category','condition','mileage','exterior_color',
+    'interior_color','price','fuel_type','transmission',
     'engine_size','cylinders','features','images',
-    'whatsapp_enabled','phone_enabled','status'
+    'whatsapp_enabled','phone_enabled','status',
+    'importer','engine_power_hp'
   ];
+
+  // نضمن إنو الصور ما تزيد عن 10
+  if (Array.isArray(fields.images)) {
+    fields.images = fields.images.slice(0, 10);
+  }
+
+  if (fields.features && !Array.isArray(fields.features)) {
+    // لو إجت غلط من الفرونت كمثال
+    fields.features = [];
+  }
 
   const setParts = [];
   const params = [];

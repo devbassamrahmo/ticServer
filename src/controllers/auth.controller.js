@@ -1,16 +1,83 @@
 // src/controllers/auth.controller.js
-const { createOtp, findValidOtp, markOtpUsed } = require('../models/otp.model');
+const {
+  generateOtpCode,
+  createOtp,
+  findValidOtp,
+  markOtpUsed,
+  invalidateOldOtps,
+} = require('../models/otp.model');
+
 const { findUserByPhone, createUser } = require('../models/user.model');
 const { signUserToken } = require('../utils/jwt');
 const { initOnboardingForUser } = require('../models/onboarding.model');
+const { sendOtpSms } = require('../services/sms.service');
 
+/** تطبيع رقم الجوال (بسيط، حسب السعودية) */
+function normalizePhone(phone) {
+  phone = phone.trim();
+
+  if (phone.startsWith('+')) return phone;
+
+  // يبدأ بـ 966 بدون +
+  if (phone.startsWith('966')) {
+    return '+' + phone;
+  }
+
+  // يبدأ بـ 0 → نعتبره رقم سعودي 05xxxxxx
+  if (phone.startsWith('0')) {
+    return '+966' + phone.slice(1);
+  }
+
+  // أي شي تاني → نضيف +966 كبداية
+  return '+966' + phone;
+}
 function generateOtp() {
   return String(Math.floor(100000 + Math.random() * 900000)); // 6 digits
 }
+/**
+ * POST /api/auth/request-otp
+ */
+// exports.requestOtp = async (req, res) => {
+//   try {
+//     let { phone } = req.body;
 
-// POST /api/auth/request-otp
+//     if (!phone) {
+//       return res
+//         .status(400)
+//         .json({ success: false, message: 'الرجاء إدخال رقم الهاتف' });
+//     }
+
+//     phone = normalizePhone(phone);
+
+//     const code = generateOtpCode();
+//     const expiresAt = new Date(Date.now() + 5 * 60 * 1000); // 5 دقائق
+
+//     await invalidateOldOtps(phone);
+
+//     await createOtp(phone, code, expiresAt);
+
+//     await sendOtpSms(phone, code);
+
+//     return res.json({
+//       success: true,
+//       message: 'تم إرسال كود التحقق على جوالك',
+//     });
+//   } catch (err) {
+//     console.error('requestOtp error:', err);
+//     if (err.message === 'SMS_SEND_FAILED') {
+//       return res.status(500).json({
+//         success: false,
+//         message: 'تعذر إرسال الرسالة، حاول مرة أخرى لاحقاً',
+//       });
+//     }
+//     return res
+//       .status(500)
+//       .json({ success: false, message: 'خطأ في السيرفر' });
+//   }
+// };
+
+//__________________________________________
 exports.requestOtp = async (req, res) => {
-  
   try {
     let { phone } = req.body;
 
@@ -35,89 +102,36 @@ exports.requestOtp = async (req, res) => {
       debugCode: code,
     });
   } catch (err) {
-    
     console.error('requestOtp error:', err);
     return res.status(500).json({ success: false, message: 'خطأ في السيرفر' });
   }
 };
 
-// exports.requestOtp = async (req, res) => {
-//   try {
-//     const { phone } = req.body;
+//__________________________________________
 
-//     if (!phone) {
-//       return res.status(400).json({
-//         success: false,
-//         message: 'رقم الجوال مطلوب',
-//       });
-//     }
-
-//     // 1) توليد كود OTP
-//     const code = Math.floor(100000 + Math.random() * 900000).toString(); // 6 digits
-
-//     // 2) حفظ الكود بالداتابيس/الذاكرة مرتبط بالـ phone
-//     // مفترض أنك عامل موديل/جدول otp_codes:
-//     // phone, code, expires_at, attempts ...
-//     await saveOtpForPhone(phone, code);
-
-//     // 3) إرسال SMS عبر Msegat
-//     const smsResult = await sendOtpSms(phone, code);
-
-//     if (!smsResult.success && !smsResult.disabled) {
-//       // لو في مشكلة مع بوابة الـ SMS، ممكن ترجع error للفرونت
-//       return res.status(500).json({
-//         success: false,
-//         message: 'فشل إرسال رسالة التحقق، حاول مرة أخرى',
-//       });
-//     }
-
-//     // 4) رد للـ frontend
-//     return res.json({
-//       success: true,
-//       message: 'تم إرسال رمز التحقق',
-//       // debugCode: code   // فقط في بيئة التطوير (لا تحطه في البرودكشن)
-//     });
-//   } catch (err) {
-//     console.error('requestOtp error:', err);
-//     return res.status(500).json({
-//       success: false,
-//       message: 'خطأ في السيرفر',
-//     });
-//   }
-// };
-
-
-// POST /api/auth/verify-otp
-
+/**
+ * POST /api/auth/verify-otp
+ */
 exports.verifyOtp = async (req, res) => {
   try {
     let { phone, code } = req.body;
 
     if (!phone || !code) {
-      return res
-        .status(400)
-        .json({ success: false, message: 'الرجاء إدخال رقم الهاتف والكود' });
+      return res.status(400).json({
+        success: false,
+        message: 'الرجاء إدخال رقم الهاتف والكود',
+      });
     }
 
-    phone = phone.trim();
+    phone = normalizePhone(phone);
     code = code.trim();
-
-    // (اختياري) توحيد صيغة رقم الجوال
-    // مثال: ضيف +966 لو مو موجود
-    if (!phone.startsWith('+')) {
-      // عدل هالمنطق حسب طريقة تخزينك للأرقام
-      if (phone.startsWith('0')) {
-        phone = '+966' + phone.slice(1);
-      } else {
-        phone = '+966' + phone;
-      }
-    }
 
     const otpRow = await findValidOtp(phone, code);
     if (!otpRow) {
-      return res
-        .status(400)
-        .json({ success: false, message: 'الكود غير صحيح أو منتهي' });
+      return res.status(400).json({
+        success: false,
+        message: 'الكود غير صحيح أو منتهي',
+      });
     }
 
     await markOtpUsed(otpRow.id);
@@ -159,13 +173,15 @@ exports.verifyOtp = async (req, res) => {
   }
 };
 
-// POST /api/auth/complete-profile
+/**
+ * POST /api/auth/complete-profile
+ */
 exports.completeProfile = async (req, res) => {
   try {
     let {
       phone,
-      sector,        // 'cars' أو 'real_estate'
-      account_type,  // 'individual' أو 'company'
+      sector, // 'cars' أو 'realestate'
+      account_type, // 'individual' أو 'company'
       full_name,
       company_name,
       email,
@@ -175,11 +191,12 @@ exports.completeProfile = async (req, res) => {
     if (!phone || !sector || !account_type || !full_name || !city) {
       return res.status(400).json({
         success: false,
-        message: 'الرجاء تعبئة الحقول الأساسية (الهاتف، الاسم، المدينة، نوع النشاط، نوع الحساب)',
+        message:
+          'الرجاء تعبئة الحقول الأساسية (الهاتف، الاسم، المدينة، نوع النشاط، نوع الحساب)',
       });
     }
 
-    phone = phone.trim();
+    phone = normalizePhone(phone);
 
     const existingUser = await findUserByPhone(phone);
     if (existingUser) {
@@ -200,7 +217,7 @@ exports.completeProfile = async (req, res) => {
     });
 
     await initOnboardingForUser(newUser.id);
-    
+
     const token = signUserToken(newUser);
 
     return res.status(201).json({
@@ -219,15 +236,19 @@ exports.completeProfile = async (req, res) => {
     });
   } catch (err) {
     console.error('completeProfile error:', err);
-    return res.status(500).json({ success: false, message: 'خطأ في السيرفر' });
+    return res
+      .status(500)
+      .json({ success: false, message: 'خطأ في السيرفر' });
   }
 };
 
+/**
+ * POST /api/auth/logout
+ */
 exports.logout = async (req, res) => {
   try {
     // حالياً ما عنا refresh tokens أو blacklist
     // فالموضوع بيكون من جهة الفرونت (يمسح الـ token)
-
     return res.json({
       success: true,
       message: 'تم تسجيل الخروج بنجاح',
@@ -240,4 +261,3 @@ exports.logout = async (req, res) => {
     });
   }
 };
-

@@ -1,65 +1,37 @@
 // src/services/sms.service.js
 const axios = require('axios');
 
-const MSEGAT_API_URL = process.env.MSEGAT_API_URL;
-const MSEGAT_API_KEY = process.env.MSEGAT_API_KEY;
-const MSEGAT_USER_NAME = process.env.MSEGAT_USER_NAME;
-const MSEGAT_SENDER_NAME = process.env.MSEGAT_SENDER_NAME;
+async function sendOtpSms(phone, code) {
+  const apiUrl = process.env.MSEGAT_API_URL || 'https://www.msegat.com/gw/sendsms.php';
 
-// دالة عامة لإرسال أي SMS
-async function sendSms({ to, message }) {
-  if (!MSEGAT_API_URL || !MSEGAT_API_KEY) {
-    console.warn('Msegat SMS disabled: missing API config');
-    return { success: false, disabled: true };
-  }
+  const payload = new URLSearchParams({
+    apiKey: process.env.MSEGAT_API_KEY,
+    userName: process.env.MSEGAT_USER_NAME,
+    userSender: process.env.MSEGAT_SENDER_NAME,
+    numbers: phone,
+    msg: `رمز التحقق الخاص بك في منصة Sitec هو: ${code}`, // عدل النص إذا حابب
+  });
 
   try {
-    // حسب توثيق Msegat، الموارد غالبًا من نوع form-data أو JSON
-    // هون بنفترض شكل شائع، ولو عطاك صاحب السيرفر شكل مختلف نعدله بسهولة
-
-    const payload = {
-      apiKey: MSEGAT_API_KEY,
-      userName: MSEGAT_USER_NAME,
-      numbers: to,              // رقم أو أرقام مفصولة بفاصلة
-      userSender: MSEGAT_SENDER_NAME,
-      msg: message,
-    };
-
-    const response = await axios.post(MSEGAT_API_URL, payload, {
+    const { data } = await axios.post(apiUrl, payload, {
       headers: {
-        'Content-Type': 'application/json',
+        'Content-Type': 'application/x-www-form-urlencoded',
       },
       timeout: 10000,
     });
 
-    // فيك تطبع الرد للتأكد
-    console.log('Msegat response:', response.data);
+    // هون فيك تطبع الرد مشان تشيك أول مرة:
+    console.log('Msegat response:', data);
 
-    // هون رجع whatever بدك للـ callers
-    return {
-      success: true,
-      providerResponse: response.data,
-    };
+    // حسب الـ API تبعهم، عدل الشرط:
+    // مثال: إذا في field اسمو code أو status
+    return true;
   } catch (err) {
-    console.error('Msegat SMS error:', err?.response?.data || err.message);
-    return {
-      success: false,
-      error: err?.response?.data || err.message,
-    };
+    console.error('Msegat SMS error:', err.response?.data || err.message);
+    throw new Error('SMS_SEND_FAILED');
   }
 }
 
-// دالة مخصصة لإرسال كود OTP
-async function sendOtpSms(phone, code) {
-  const msg = `رمز التحقق للدخول إلى Sitec هو: ${code}`;
-
-  return await sendSms({
-    to: phone,
-    message: msg,
-  });
-}
-
 module.exports = {
-  sendSms,
   sendOtpSms,
 };
