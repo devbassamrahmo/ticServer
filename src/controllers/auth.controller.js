@@ -87,10 +87,12 @@ exports.requestOtp = async (req, res) => {
         .json({ success: false, message: 'رقم الهاتف مطلوب' });
     }
 
-    phone = phone.trim();
+    phone = normalizePhone(phone);
 
     const code = generateOtp();
     const expiresAt = new Date(Date.now() + 5 * 60 * 1000); // بعد 5 دقائق
+
+    await invalidateOldOtps(phone);
 
     await createOtp(phone, code, expiresAt);
 

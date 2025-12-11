@@ -1,6 +1,6 @@
-// src/models/listing.model.js
 const db = require('../config/db');
-// helper لتقصير عدد الصور وتنظيف الداتا
+
+// === normalizeExtraData نفسه اللي عندك ===
 function normalizeExtraData(extraData = {}) {
   const data = { ...extraData };
 
@@ -44,7 +44,8 @@ function normalizeExtraData(extraData = {}) {
 
   return data;
 }
-// ملاحظة: مؤقتاً عم نستخدم user.id كـ dealer_id
+
+// ========== الدالة العامة (تبقى موجودة) ==========
 async function createListing(data) {
   const {
     dealer_id,
@@ -77,7 +78,7 @@ async function createListing(data) {
     RETURNING *`,
     [
       dealer_id,
-      site_id || null,          // 👈 هون المهم: لو بعت 1 أو undefined بيصير NULL
+      site_id || null,
       type,
       title,
       description,
@@ -94,6 +95,8 @@ async function createListing(data) {
 
   return result.rows[0];
 }
+
+// ========== دوال عامة لقراءة / تعديل ==========
 
 async function getListingsForDealer({
   dealer_id,
@@ -183,7 +186,6 @@ async function updateListing(id, dealer_id, fields) {
   const params = [];
   let idx = 1;
 
-  // إذا في تعديل لـ data نطبّق normalizeExtraData
   if (fields.data !== undefined) {
     fields.data = normalizeExtraData(fields.data || {});
   }
@@ -197,7 +199,6 @@ async function updateListing(id, dealer_id, fields) {
 
   if (!setParts.length) return null;
 
-  // dealer_id شرط أمان
   params.push(id);
   params.push(dealer_id);
 
@@ -242,15 +243,13 @@ async function getFeaturedListingsForDealer(dealerId, { limit = 6 }) {
   return result.rows;
 }
 
-
-
-// البحث العام (public search) لإعلانات معرض معيّن
+// ========== البحث العام (ممكن نخصصه للعقارات لاحقاً) ==========
 async function searchPublicListings(dealerId, filters = {}, pagination = {}) {
   const {
     city,
     district,
-    purpose,          // "buy" | "rent"  -> إذا عندك حقل purpose
-    property_type,    // شقة, فيلا, أرض...
+    purpose,
+    property_type,
     min_rooms,
     max_rooms,
     min_area,
@@ -298,7 +297,6 @@ async function searchPublicListings(dealerId, filters = {}, pagination = {}) {
 
   const whereClause = whereParts.join(' AND ');
 
-  // query القائمة
   const listQuery = `
     SELECT
       l.*,
@@ -312,7 +310,6 @@ async function searchPublicListings(dealerId, filters = {}, pagination = {}) {
     LIMIT ${pageSize} OFFSET ${offset}
   `;
 
-  // query العدد الكلي
   const countQuery = `
     SELECT COUNT(*) AS total
     FROM listings l
@@ -332,7 +329,6 @@ async function searchPublicListings(dealerId, filters = {}, pagination = {}) {
   };
 }
 
-// إعلان واحد (public) ومتأكدين إنه تابع لهالمعرض و active
 async function getPublicListingById(dealerId, listingId) {
   const res = await db.query(
     `SELECT
@@ -352,12 +348,73 @@ async function getPublicListingById(dealerId, listingId) {
   return res.rows[0] || null;
 }
 
+/* ================================
+ *  🔥 قسم خاص بالعقارات (property)
+ * ================================ */
+
+async function createPropertyListing(data) {
+  return createListing({
+    ...data,
+    type: 'property',
+  });
+}
+
+async function getPropertiesForDealer(options) {
+  return getListingsForDealer({
+    ...options,
+    type: 'property',
+  });
+}
+
+async function updatePropertyListing(id, dealer_id, fields) {
+  const updated = await updateListing(id, dealer_id, fields);
+  if (!updated) return null;
+  if (updated.type !== 'property') return null; // أمان: ما نعدل مشروع بالغلط
+  return updated;
+}
+
+/* ================================
+ *  🔥 قسم خاص بالمشاريع (project)
+ * ================================ */
+
+async function createProjectListing(data) {
+  return createListing({
+    ...data,
+    type: 'project',
+  });
+}
+
+async function getProjectsForDealer(options) {
+  return getListingsForDealer({
+    ...options,
+    type: 'project',
+  });
+}
+
+async function updateProjectListing(id, dealer_id, fields) {
+  const updated = await updateListing(id, dealer_id, fields);
+  if (!updated) return null;
+  if (updated.type !== 'project') return null;
+  return updated;
+}
+
 module.exports = {
+  // عام
   createListing,
   getListingsForDealer,
   updateListing,
   deleteListing,
   getFeaturedListingsForDealer,
   searchPublicListings,
-  getPublicListingById
+  getPublicListingById,
+
+  // عقارات
+  createPropertyListing,
+  getPropertiesForDealer,
+  updatePropertyListing,
+
+  // مشاريع
+  createProjectListing,
+  getProjectsForDealer,
+  updateProjectListing,
 };

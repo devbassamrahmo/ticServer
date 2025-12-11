@@ -94,8 +94,12 @@ exports.upsertMySite = async (req, res) => {
       // خطوة onboarding: site_setup
       try {
         await completeStep(ownerId, 'site_setup');
+
+        if (is_published) {
+          await completeStep(ownerId, 'publish_site');
+        }
       } catch (e) {
-        console.error('completeStep(site_setup) error:', e.message);
+        console.error('completeStep(site_setup/publish_site) error:', e.message);
       }
 
       return res.json({
