@@ -57,9 +57,10 @@ async function completeStep(userId, stepKey) {
   const step = res.rows[0];
   if (!step) return null;
 
+  // لو كانت Done رجع كل الخطوات كمان، حتى يكون الـ shape ثابت
   if (step.status === 'done') {
-    // Already done
-    return step;
+    const all = await getOnboardingForUser(userId);
+    return all;
   }
 
   // نعلّمها done

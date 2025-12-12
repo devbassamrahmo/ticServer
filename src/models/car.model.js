@@ -16,7 +16,6 @@ async function createCarListing(dealerId, data) {
     price,
     fuel_type,
     transmission,
-    // ملاحظة: engine_size هون صارت نوع الدفع (FWD/RWD/AWD...)
     engine_size,
     cylinders,
     features,
@@ -27,9 +26,13 @@ async function createCarListing(dealerId, data) {
     engine_power_hp
   } = data;
 
-  // نضمن إنو فينا Arrays ونحدّد الصور لـ 10
+  // Normalize Arrays
   const normalizedFeatures = Array.isArray(features) ? features : [];
   const normalizedImages = Array.isArray(images) ? images.slice(0, 10) : [];
+
+  // Convert to JSON strings (Postgres JSONB compatible)
+  const featuresJson = JSON.stringify(normalizedFeatures);
+  const imagesJson = JSON.stringify(normalizedImages);
 
   const result = await db.query(
     `INSERT INTO car_listings (
@@ -49,7 +52,7 @@ async function createCarListing(dealerId, data) {
       dealerId, title, description, brand, model, trim, year, category,
       condition, mileage, exterior_color, interior_color,
       price, fuel_type, transmission, engine_size, cylinders,
-      normalizedFeatures, normalizedImages, whatsapp_enabled, phone_enabled,
+      featuresJson, imagesJson, whatsapp_enabled, phone_enabled,
       importer, engine_power_hp
     ]
   );
@@ -111,20 +114,28 @@ async function updateCarListing(id, dealerId, fields) {
     'importer','engine_power_hp'
   ];
 
-  // نضمن إنو الصور ما تزيد عن 10
-  if (Array.isArray(fields.images)) {
-    fields.images = fields.images.slice(0, 10);
-  }
-
-  if (fields.features && !Array.isArray(fields.features)) {
-    // لو إجت غلط من الفرونت كمثال
-    fields.features = [];
-  }
-
   const setParts = [];
   const params = [];
   let idx = 1;
 
+  // Normalize features
+  if (fields.features !== undefined) {
+    if (!Array.isArray(fields.features)) {
+      fields.features = [];
+    }
+    fields.features = JSON.stringify(fields.features);
+  }
+
+  // Normalize images (max 10)
+  if (fields.images !== undefined) {
+    if (Array.isArray(fields.images)) {
+      fields.images = JSON.stringify(fields.images.slice(0, 10));
+    } else {
+      fields.images = JSON.stringify([]);
+    }
+  }
+
+  // Build dynamic update query
   for (const key of allowed) {
     if (fields[key] !== undefined) {
       setParts.push(`${key} = $${idx++}`);

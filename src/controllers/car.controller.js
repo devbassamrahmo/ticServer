@@ -7,6 +7,7 @@ const {
 } = require('../models/car.model');
 
 exports.createCar = async (req, res) => {
+  console.log(req.body)
   try {
     const dealerId = req.user.id;
     const car = await createCarListing(dealerId, req.body);
