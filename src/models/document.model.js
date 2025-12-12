@@ -91,6 +91,8 @@ async function getDocumentsForAdmin({ status, document_type, page = 1, pageSize 
   };
 }
 
+
+
 // وثائق يوزر معيّن (مفيدة لصفحة بروفايل داخل لوحة الأدمن)
 async function getUserDocumentsForAdmin(userId) {
   const res = await db.query(
@@ -121,9 +123,31 @@ async function reviewDocument(docId, adminId, { status, reject_reason }) {
   return res.rows[0] ? mapDocRow(res.rows[0]) : null;
 }
 
+async function getAccountDocumentsForUser(userId, { document_type } = {}) {
+  const params = [userId];
+  let where = 'user_id = $1';
+  let idx = 2;
+
+  if (document_type) {
+    where += ` AND document_type = $${idx++}`;
+    params.push(document_type);
+  }
+
+  const res = await db.query(
+    `SELECT *
+     FROM account_documents
+     WHERE ${where}
+     ORDER BY created_at DESC`,
+    params
+  );
+
+  return res.rows.map(mapDocRow);
+}
+
 module.exports = {
   createAccountDocument,
   getDocumentsForAdmin,
   getUserDocumentsForAdmin,
   reviewDocument,
+  getAccountDocumentsForUser
 };

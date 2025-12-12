@@ -9,76 +9,109 @@ const { createAccountDocument } = require('../models/document.model'); // لو �
 exports.uploadListingImage = async (req, res) => {
   try {
     const userId = req.user.id;
-    const file = req.file;
-    const { listingId } = req.body; // ممكن تستخدمه بترتيب المسار
+    const { listingId } = req.body;
 
-    if (!file) {
+    console.log('BODY >>>', req.body);
+    console.log('FILES >>>', req.files?.map(f => ({ fieldname: f.fieldname, originalname: f.originalname })));
+
+    let files = req.files || [];
+
+    if (!files.length) {
       return res.status(400).json({
         success: false,
-        message: 'لم يتم إرفاق ملف',
+        message: 'لم يتم إرفاق أي ملف',
       });
+    }
+
+    // حد أقصى 10
+    if (files.length > 10) {
+      files = files.slice(0, 10);
     }
 
     const prefix = `dealer_${userId}/listing_${listingId || 'general'}`;
 
-    const result = await uploadToBucket(
-      'listing-images',         // اسم البكت في Supabase
-      file.buffer,
-      file.originalname,
-      prefix
+    const results = await Promise.all(
+      files.map((file) =>
+        uploadToBucket('listing-images', file.buffer, file.originalname, prefix)
+          .then((stored) => ({
+            path: stored.path,
+            url: stored.url,
+            originalName: file.originalname,
+            mimetype: file.mimetype,
+            size: file.size,
+          }))
+      )
     );
 
     return res.json({
       success: true,
-      path: result.path,
-      url: result.url,
+      items: results,
     });
   } catch (err) {
     console.error('uploadListingImage error:', err);
+    console.error(err.stack);
     return res.status(500).json({
       success: false,
-      message: 'فشل رفع الملف',
+      message: 'فشل رفع الملفات',
     });
   }
 };
+
 
 
 // POST /api/upload/branding-image
 // form-data:
 //   file: (binary)
 //   type: "logo" | "header"
-exports.uploadBrandingImage = async (req, res) => {
+exports.uploadBrandingImages = async (req, res) => {
   try {
     const userId = req.user.id;
-    const file = req.file;
     const { type } = req.body; // logo | header
 
-    if (!file || !type) {
+    if (!type) {
       return res.status(400).json({
         success: false,
-        message: 'الملف و type مطلوبان',
+        message: 'type مطلوب (logo أو header)',
+      });
+    }
+
+    const files = req.files || [];
+
+    if (!files.length) {
+      return res.status(400).json({
+        success: false,
+        message: 'لم يتم إرفاق أي ملف',
       });
     }
 
     const prefix = `user_${userId}/${type}`;
 
-    const result = await uploadToBucket(
-      'site-branding',
-      file.buffer,
-      file.originalname,
-      prefix
+    const results = await Promise.all(
+      files.map((file) =>
+        uploadToBucket(
+          'site-branding',
+          file.buffer,
+          file.originalname,
+          prefix
+        ).then((res) => ({
+          path: res.path,
+          url: res.url,
+          originalName: file.originalname,
+          mimetype: file.mimetype,
+          size: file.size,
+        }))
+      )
     );
 
     return res.json({
       success: true,
-      path: result.path,
-      url: result.url,
+      items: results,
     });
   } catch (err) {
-    console.error('uploadBrandingImage error:', err);
+    console.error('uploadBrandingImages error:', err);
     return res.status(500).json({
       success: false,
-      message: 'فشل رفع الملف',
+      message: 'فشل رفع البراندنغ',
     });
   }
 };
@@ -88,52 +121,141 @@ exports.uploadBrandingImage = async (req, res) => {
 // form-data:
 //   file: (binary)
 //   document_type: "commercial_register" | "national_address" | "tax_certificate"
-exports.uploadDocument = async (req, res) => {
+exports.uploadDocuments = async (req, res) => {
   try {
     const userId = req.user.id;
-    const file = req.file;
     const { document_type } = req.body;
 
-    if (!file || !document_type) {
+    if (!document_type) {
       return res.status(400).json({
         success: false,
-        message: 'الملف و document_type مطلوبان',
+        message: 'document_type مطلوب',
+      });
+    }
+
+    const files = req.files || [];
+
+    if (!files.length) {
+      return res.status(400).json({
+        success: false,
+        message: 'لم يتم إرفاق أي ملف',
       });
     }
 
     const prefix = `user_${userId}/${document_type}`;
 
-    const result = await uploadToBucket(
-      'documents',              // bucket الخاص بالوثائق (يفضل يكون private)
-      file.buffer,
-      file.originalname,
-      prefix
-    );
+    const results = [];
 
-    // خيار 1: ترجع فقط مسار الملف، والفرونت ينادي /api/account/documents
-    // خيار 2: تنشئ السجل هون مباشرة في account_documents:
+    for (const file of files) {
+      const uploaded = await uploadToBucket(
+        'documents',
+        file.buffer,
+        file.originalname,
+        prefix
+      );
 
-    let documentRecord = null;
-    try {
-      documentRecord = await createAccountDocument(userId, {
+      // نخزن بس المسار الداخلي — نفس سلوك النظام القديم
+      const docRecord = await createAccountDocument(userId, {
         document_type,
-        file_url: result.path, // نخزن المسار الداخلي، مو ال public URL
+        file_url: uploaded.path,
       });
-    } catch (e) {
-      console.error('createAccountDocument error:', e);
+
+      results.push({
+        path: uploaded.path,
+        url: uploaded.url,
+        document: docRecord,
+      });
     }
 
     return res.json({
       success: true,
-      path: result.path,
-      url: result.url,          // لو البكت public بيكون usable، لو private تجاهلو بالفرونت
-      document: documentRecord, // اختياري
+      items: results,
     });
   } catch (err) {
-    console.error('uploadDocument error:', err);
+    console.error('uploadDocuments error:', err);
     return res.status(500).json({
       success: false,
-      message: 'فشل رفع الملف',
+      message: 'فشل رفع المستندات',
+    });
+  }
+};
+
+exports.getListingMedia = async (req, res) => {
+  try {
+    const userId = req.user.id;
+    const { listingId } = req.query;
+
+    const folder = `dealer_${userId}`;
+    const allFiles = await listFromBucket('listing-images', folder);
+
+    const prefix = `listing_${listingId || 'general'}`;
+
+    const items = allFiles
+      .filter((file) => file.name.startsWith(prefix))
+      .map((file) => ({
+        name: file.name,
+        path: file.path,
+        url: file.url,
+        created_at: file.created_at,
+      }));
+
+    return res.json({
+      success: true,
+      items,
+    });
+  } catch (err) {
+    console.error('getListingMedia error:', err);
+    return res.status(500).json({
+      success: false,
+      message: 'فشل جلب ملفات الإعلان',
+    });
+  }
+};
+
+exports.getBrandingImages = async (req, res) => {
+  try {
+    const userId = req.user.id;
+    const { type } = req.query; // logo | header
+
+    if (!type) {
+      return res.status(400).json({
+        success: false,
+        message: 'type مطلوب (logo أو header)',
+      });
+    }
+
+    const folder = `user_${userId}/${type}`;
+    const items = await listFromBucket('site-branding', folder);
+
+    return res.json({
+      success: true,
+      items,
+    });
+  } catch (err) {
+    console.error('getBrandingImages error:', err);
+    return res.status(500).json({
+      success: false,
+      message: 'فشل جلب صور البراندنغ',
+    });
+  }
+};
+
+exports.getMyDocuments = async (req, res) => {
+  try {
+    const userId = req.user.id;
+    const { document_type } = req.query;
+
+    const docs = await getAccountDocumentsForUser(userId, { document_type });
+
+    return res.json({
+      success: true,
+      items: docs,
+    });
+  } catch (err) {
+    console.error('getMyDocuments error:', err);
+    return res.status(500).json({
+      success: false,
+      message: 'فشل جلب المستندات',
     });
   }
 };

@@ -6,28 +6,45 @@ const { authRequired } = require('../middleware/auth');
 const upload = require('../middleware/upload');
 const uploadController = require('../controllers/upload.controller');
 
-// كل الرفع يحتاج يوزر مسجّل
 router.use(authRequired);
 
-// رفع صورة لإعلان (عقار أو سيارة)
+// رفع صور/فيديوهات إعلان (حتى 10 ملفات)
 router.post(
   '/listing-image',
-  upload.single('file'),          // field name = "file"
+  upload.any(),                        // 👈 مهم
   uploadController.uploadListingImage
 );
 
-// رفع صورة هوية بصرية للموقع (logo / header)
-router.post(
-  '/branding-image',
-  upload.single('file'),
-  uploadController.uploadBrandingImage
+// ✅ جلب صور/فيديوهات إعلان
+router.get(
+  '/listing-image',
+  uploadController.getListingMedia
 );
 
-// رفع مستند (سجل تجاري / عنوان وطني / شهادة ضريبية)
+// رفع صور براندنغ (logo/header)
+router.post(
+  '/branding-image',
+  upload.array('files', 5),
+  uploadController.uploadBrandingImages
+);
+
+// ✅ جلب صور البراندنغ
+router.get(
+  '/branding-image',
+  uploadController.getBrandingImages
+);
+
+// رفع مستندات
 router.post(
   '/document',
-  upload.single('file'),
-  uploadController.uploadDocument
+  upload.array('files', 10),
+  uploadController.uploadDocuments
+);
+
+// ✅ جلب مستندات اليوزر
+router.get(
+  '/document',
+  uploadController.getMyDocuments
 );
 
 module.exports = router;

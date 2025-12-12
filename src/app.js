@@ -17,6 +17,9 @@ const propertyRoutes = require('./routes/property.routes');
 const projectRoutes = require('./routes/project.routes');
 const packagesRoutes = require('./routes/packages.routes');
 const siteRoutes = require('./routes/site.routes');
+const paymentRoutes = require('./routes/payment.routes');
+const nafathRoutes = require('./routes/nafath.routes');
+const contactFormRoutes = require('./routes/contactForm.routes');
 
 const app = express();
 
@@ -42,4 +45,9 @@ app.use('/api/properties', propertyRoutes);
 app.use('/api/projects', projectRoutes);
 app.use('/api/packages', packagesRoutes);
 app.use('/api/site', siteRoutes);
+app.use('/api/payments', paymentRoutes);
+app.use('/api/auth/nafath', nafathRoutes);
+app.use('/api/contact-forms', contactFormRoutes);
+
+
 module.exports = app;
