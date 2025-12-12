@@ -137,9 +137,9 @@ exports.verifyOtp = async (req, res) => {
     }
 
     await markOtpUsed(otpRow.id);
-
     const user = await findUserByPhone(phone);
-
+    console.log('DB user admin field:', user.is_admin, user.isAdmin, user);
+    console.log("user us " , user)
     if (!user) {
       // ما عنده حساب → الفرونت يفتح فورم المعلومات
       return res.json({
@@ -152,7 +152,7 @@ exports.verifyOtp = async (req, res) => {
     // موجود → نرجع توكن + بياناته
     const token = signUserToken(user);
 
-    return res.json({
+        return res.json({
       success: true,
       status: 'existing',
       token,
@@ -165,6 +165,7 @@ exports.verifyOtp = async (req, res) => {
         company_name: user.company_name,
         email: user.email,
         city: user.city,
+        is_admin: user.is_admin || false,
       },
     });
   } catch (err) {

@@ -1,26 +1,27 @@
 const jwt = require('jsonwebtoken');
 
-const JWT_SECRET = process.env.JWT_SECRET || 'dev_secret_change_me';
+exports.authRequired = (req, res, next) => {
+  const authHeader = req.headers.authorization;
 
-function authRequired(req, res, next) {
-  const authHeader = req.headers.authorization || '';
-  const token = authHeader.startsWith('Bearer ')
-    ? authHeader.slice(7)
-    : null;
+  if (!authHeader)
+    return res.status(401).json({ success: false, message: 'توكن مفقود' });
 
-  if (!token) {
-    return res.status(401).json({ success: false, message: 'مطلوب تسجيل الدخول' });
-  }
+  const token = authHeader.split(' ')[1];
 
   try {
-    const payload = jwt.verify(token, JWT_SECRET);
-    req.user = payload; // { id, phone }
+    const decoded = jwt.verify(token, process.env.JWT_SECRET);
+    console.log(decoded)
+    // نضيف البيانات للـ request
+    req.user = {
+      id: decoded.id,
+      phone: decoded.phone,
+      is_admin: decoded.is_admin || false,
+    };
+
     next();
   } catch (err) {
-    return res.status(401).json({ success: false, message: 'توكن غير صالح' });
+    return res
+      .status(401)
+      .json({ success: false, message: 'توكن غير صالح أو منتهي' });
   }
-}
-
-module.exports = {
-  authRequired,
 };

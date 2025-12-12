@@ -3,7 +3,12 @@ const db = require('../config/db');
 
 async function findUserByPhone(phone) {
   const result = await db.query(
-    'SELECT * FROM users WHERE phone = $1 LIMIT 1',
+    `SELECT
+        id, phone, full_name, account_type, sector, company_name, email, city,
+        COALESCE(is_admin, false) AS is_admin
+     FROM users
+     WHERE phone = $1
+     LIMIT 1`,
     [phone]
   );
   return result.rows[0] || null;
