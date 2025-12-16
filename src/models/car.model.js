@@ -17,6 +17,7 @@ async function createCarListing(dealerId, data) {
     fuel_type,
     transmission,
     engine_size,
+    drive_type,
     cylinders,
     features,
     images,
@@ -39,6 +40,7 @@ async function createCarListing(dealerId, data) {
       dealer_id, title, description, brand, model, trim, year, category,
       condition, mileage, exterior_color, interior_color,
       price, fuel_type, transmission, engine_size, cylinders,
+      drive_type,
       features, images, whatsapp_enabled, phone_enabled, importer, engine_power_hp
     )
     VALUES (
@@ -51,7 +53,7 @@ async function createCarListing(dealerId, data) {
     [
       dealerId, title, description, brand, model, trim, year, category,
       condition, mileage, exterior_color, interior_color,
-      price, fuel_type, transmission, engine_size, cylinders,
+      price, fuel_type, transmission, engine_size, cylinders,drive_type,
       featuresJson, imagesJson, whatsapp_enabled, phone_enabled,
       importer, engine_power_hp
     ]
@@ -109,7 +111,7 @@ async function updateCarListing(id, dealerId, fields) {
     'title','description','brand','model','trim','year',
     'category','condition','mileage','exterior_color',
     'interior_color','price','fuel_type','transmission',
-    'engine_size','cylinders','features','images',
+    'engine_size','cylinders','drive_type','features','images',
     'whatsapp_enabled','phone_enabled','status',
     'importer','engine_power_hp'
   ];

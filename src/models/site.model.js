@@ -32,6 +32,76 @@ function mapSiteRow(row) {
   };
 }
 
+async function upsertSiteBasic(ownerId, { sector, slug, name, template_key }) {
+  if (!ALLOWED_TEMPLATES.includes(template_key)) throw new Error('INVALID_TEMPLATE');
+
+  const result = await db.query(
+    `INSERT INTO sites (owner_id, sector, slug, name, template_key, theme, settings, is_published)
+     VALUES ($1,$2,$3,$4,$5,'{}'::jsonb,'{}'::jsonb,FALSE)
+     ON CONFLICT (owner_id, sector)
+     DO UPDATE SET
+       slug = EXCLUDED.slug,
+       name = EXCLUDED.name,
+       template_key = EXCLUDED.template_key,
+       updated_at = NOW()
+     RETURNING *`,
+    [ownerId, sector, slug, name || null, template_key]
+  );
+
+  return mapSiteRow(result.rows[0]);
+}
+
+// 2) theme (colors/fonts)
+async function upsertSiteTheme(ownerId, { sector, colors = {}, fonts = {} }) {
+  const result = await db.query(
+    `INSERT INTO sites (owner_id, sector, theme, settings, is_published)
+     VALUES ($1,$2, jsonb_build_object('colors',$3::jsonb,'fonts',$4::jsonb), '{}'::jsonb, FALSE)
+     ON CONFLICT (owner_id, sector)
+     DO UPDATE SET
+       theme = jsonb_build_object(
+         'colors', COALESCE(sites.theme->'colors','{}'::jsonb) || $3::jsonb,
+         'fonts',  COALESCE(sites.theme->'fonts','{}'::jsonb)  || $4::jsonb
+       ),
+       updated_at = NOW()
+     RETURNING *`,
+    [ownerId, sector, JSON.stringify(colors), JSON.stringify(fonts)]
+  );
+
+  return mapSiteRow(result.rows[0]);
+}
+
+// 3) settings (branding/social/location)
+async function upsertSiteSettings(ownerId, { sector, branding = {}, social = {}, location = {} }) {
+  const result = await db.query(
+    `INSERT INTO sites (owner_id, sector, settings, theme, is_published)
+     VALUES ($1,$2, jsonb_build_object('branding',$3::jsonb,'social',$4::jsonb,'location',$5::jsonb), '{}'::jsonb, FALSE)
+     ON CONFLICT (owner_id, sector)
+     DO UPDATE SET
+       settings = jsonb_build_object(
+         'branding', COALESCE(sites.settings->'branding','{}'::jsonb) || $3::jsonb,
+         'social',   COALESCE(sites.settings->'social','{}'::jsonb)   || $4::jsonb,
+         'location', COALESCE(sites.settings->'location','{}'::jsonb) || $5::jsonb
+       ),
+       updated_at = NOW()
+     RETURNING *`,
+    [ownerId, sector, JSON.stringify(branding), JSON.stringify(social), JSON.stringify(location)]
+  );
+
+  return mapSiteRow(result.rows[0]);
+}
+
+// 4) publish
+async function setSitePublish(ownerId, { sector, is_published }) {
+  const result = await db.query(
+    `UPDATE sites
+     SET is_published = $3, updated_at = NOW()
+     WHERE owner_id = $1 AND sector = $2
+     RETURNING *`,
+    [ownerId, sector, Boolean(is_published)]
+  );
+  return result.rows[0] ? mapSiteRow(result.rows[0]) : null;
+}
+
 async function getSiteByOwner(ownerId, sector) {
   const result = await db.query(
     `SELECT *
@@ -99,9 +169,57 @@ async function getSiteBySlug(slug) {
   return row ? mapSiteRow(row) : null;
 }
 
+async function updateSiteAll(ownerId, {
+  sector,
+  slug,
+  name,
+  template_key,
+  is_published,
+  theme,
+  settings,
+}) {
+  if (template_key && !ALLOWED_TEMPLATES.includes(template_key)) {
+    throw new Error('INVALID_TEMPLATE');
+  }
+
+  // merge محافظ (بدون مسح القديم)
+  const themeJson = theme ? JSON.stringify(theme) : null;
+  const settingsJson = settings ? JSON.stringify(settings) : null;
+
+  const result = await db.query(
+    `UPDATE sites
+     SET
+       slug = COALESCE($3, slug),
+       name = COALESCE($4, name),
+       template_key = COALESCE($5, template_key),
+       theme = COALESCE(theme, '{}'::jsonb) || COALESCE($6::jsonb, '{}'::jsonb),
+       settings = COALESCE(settings, '{}'::jsonb) || COALESCE($7::jsonb, '{}'::jsonb),
+       is_published = COALESCE($8, is_published),
+       updated_at = NOW()
+     WHERE owner_id = $1 AND sector = $2
+     RETURNING *`,
+    [
+      ownerId,
+      sector,
+      slug || null,
+      name || null,
+      template_key || null,
+      themeJson,
+      settingsJson,
+      is_published === undefined ? null : Boolean(is_published),
+    ]
+  );
+
+  return result.rows[0] ? mapSiteRow(result.rows[0]) : null;
+}
 module.exports = {
   getSiteByOwner,
   upsertSiteForOwner,
   getSiteBySlug,
   ALLOWED_TEMPLATES,
+  upsertSiteBasic,
+  upsertSiteTheme,
+  upsertSiteSettings,
+  setSitePublish,
+  updateSiteAll,
 };

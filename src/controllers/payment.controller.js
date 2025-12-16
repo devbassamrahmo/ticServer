@@ -65,10 +65,14 @@ exports.createPayment = async (req, res) => {
       gateway_payment_id: gatewayPayment.id,
     });
 
-    return res.json({
+        return res.json({
       success: true,
       localPaymentId: localPayment.id,
-      moyasarPayment: gatewayPayment,
+      amount: halalas,
+      currency: 'SAR',
+      description: localPayment.description,
+      publishableKey: process.env.MOYASAR_PUBLISHABLE_KEY,
+      callbackUrl: `${process.env.FRONTEND_URL}/payment/callback?pid=${localPayment.id}`
     });
   } catch (err) {
     console.error('createPayment error:', err.response?.data || err);
@@ -83,22 +87,27 @@ exports.createPayment = async (req, res) => {
 // ميسر ترسل Payment object كامل
 exports.moyasarWebhook = async (req, res) => {
   try {
-    const payment = req.body;
+    const event = req.body;
 
-    // تقدر تضيف هنا تحقق توقيع لو ميسر بتدعم Signature
-    const status = payment.status; // paid, failed, etc.
+    // 1) تحقق من secret_token (هي “كلمة سر” بتحددها من داشبورد ميسّر)
+    if (!event?.secret_token || event.secret_token !== process.env.MOYASAR_WEBHOOK_SECRET) {
+      return res.sendStatus(401);
+    }
+
+    // 2) بيانات الدفع موجودة داخل event.data
+    const payment = event.data;
+    if (!payment?.id) return res.sendStatus(400);
+
+    const status = payment.status; // paid / failed / initiated ... حسب ميسّر
     const feeHalalas = payment.fee || 0;
 
-    const updated = await updatePaymentByGatewayId(payment.id, {
+    await updatePaymentByGatewayId(payment.id, {
       status,
       gateway_fee_halalas: feeHalalas,
-      meta: payment, // لو حاب تخزن كل الرد
+      meta: { event }, // خزّن الايفنت كله أو payment لحاله حسب ما بدك
     });
 
-    console.log('Moyasar webhook payment:', payment.id, status);
-
-    // TODO: لو status === 'paid' فعّل الاشتراك / الباقة عندك
-
+    // TODO: إذا status === 'paid' → فعّل الاشتراك/الباقة عندك (لازم يكون idempotent)
     return res.sendStatus(200);
   } catch (err) {
     console.error('moyasarWebhook error:', err);

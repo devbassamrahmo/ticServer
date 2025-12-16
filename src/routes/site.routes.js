@@ -34,4 +34,9 @@ router.use(authRequired);
 router.get('/', siteController.getMySite);     // ?sector=cars|realestate
 router.post('/', siteController.upsertMySite);
 
+router.patch('/basic', siteController.updateMySiteBasic);
+router.patch('/theme', siteController.updateMySiteTheme);
+router.patch('/settings', siteController.updateMySiteSettings);
+router.patch('/publish', siteController.setPublishState);
+router.put('/', siteController.updateMySiteAll);
 module.exports = router;

@@ -3,6 +3,10 @@ const {
   getSiteByOwner,
   upsertSiteForOwner,
   getSiteBySlug,
+  upsertSiteBasic,
+  upsertSiteTheme,
+  upsertSiteSettings,
+  setSitePublish,
 } = require('../models/site.model');
 const {
   getFeaturedListingsForDealer,
@@ -279,6 +283,124 @@ exports.getRealestateDetailsForSite = async (req, res) => {
     });
   } catch (err) {
     console.error('getRealestateDetailsForSite error:', err);
+    return res.status(500).json({ success: false, message: 'خطأ في السيرفر' });
+  }
+};
+
+exports.updateMySiteBasic = async (req, res) => {
+  try {
+    const ownerId = req.user.id;
+    const { sector, slug, name, template_key } = req.body;
+
+    if (!sector || !slug || !template_key) {
+      return res.status(400).json({ success:false, message:'sector و slug و template_key مطلوبة' });
+    }
+
+    const site = await upsertSiteBasic(ownerId, { sector, slug, name, template_key });
+    return res.json({ success:true, site });
+  } catch (err) {
+    if (err.message === 'INVALID_TEMPLATE') {
+      return res.status(400).json({ success:false, message:'template_key غير صالح' });
+    }
+    if (err.code === '23505') {
+      return res.status(400).json({ success:false, message:'هذا الرابط مستخدم لموقع آخر' });
+    }
+    console.error('updateMySiteBasic error:', err);
+    return res.status(500).json({ success:false, message:'خطأ في السيرفر' });
+  }
+};
+
+exports.updateMySiteTheme = async (req, res) => {
+  try {
+    const ownerId = req.user.id;
+    const { sector, colors, fonts } = req.body;
+    if (!sector) return res.status(400).json({ success:false, message:'sector مطلوب' });
+
+    const site = await upsertSiteTheme(ownerId, { sector, colors: colors||{}, fonts: fonts||{} });
+    return res.json({ success:true, site });
+  } catch (err) {
+    console.error('updateMySiteTheme error:', err);
+    return res.status(500).json({ success:false, message:'خطأ في السيرفر' });
+  }
+};
+
+exports.updateMySiteSettings = async (req, res) => {
+  try {
+    const ownerId = req.user.id;
+    const { sector, branding, social, location } = req.body;
+    if (!sector) return res.status(400).json({ success:false, message:'sector مطلوب' });
+
+    const site = await upsertSiteSettings(ownerId, {
+      sector,
+      branding: branding||{},
+      social: social||{},
+      location: location||{},
+    });
+
+    return res.json({ success:true, site });
+  } catch (err) {
+    console.error('updateMySiteSettings error:', err);
+    return res.status(500).json({ success:false, message:'خطأ في السيرفر' });
+  }
+};
+
+exports.setPublishState = async (req, res) => {
+  try {
+    const ownerId = req.user.id;
+    const { sector, is_published } = req.body;
+    if (!sector) return res.status(400).json({ success:false, message:'sector مطلوب' });
+
+    const site = await setSitePublish(ownerId, { sector, is_published });
+    if (!site) return res.status(404).json({ success:false, message:'الموقع غير موجود' });
+
+    return res.json({ success:true, site });
+  } catch (err) {
+    console.error('setPublishState error:', err);
+    return res.status(500).json({ success:false, message:'خطأ في السيرفر' });
+  }
+};
+
+exports.updateMySiteAll = async (req, res) => {
+  try {
+    const ownerId = req.user.id;
+
+    const {
+      sector,
+      slug,
+      name,
+      template_key,
+      is_published,
+      theme,
+      settings,
+    } = req.body;
+
+    if (!sector) {
+      return res.status(400).json({ success: false, message: 'sector مطلوب' });
+    }
+
+    const site = await updateSiteAll(ownerId, {
+      sector,
+      slug,
+      name,
+      template_key,
+      is_published,
+      theme,
+      settings,
+    });
+
+    if (!site) {
+      return res.status(404).json({ success: false, message: 'الموقع غير موجود' });
+    }
+
+    return res.json({ success: true, site });
+  } catch (err) {
+    if (err.message === 'INVALID_TEMPLATE') {
+      return res.status(400).json({ success: false, message: 'template_key غير صالح' });
+    }
+    if (err.code === '23505') {
+      return res.status(400).json({ success: false, message: 'هذا الرابط مستخدم لموقع آخر' });
+    }
+    console.error('updateMySiteAll error:', err);
     return res.status(500).json({ success: false, message: 'خطأ في السيرفر' });
   }
 };
