@@ -4,7 +4,7 @@ const cors = require('cors');
 const helmet = require('helmet');
 
 const authRoutes = require('./routes/auth.routes');
-const listingRoutes = require('./routes/listing.routes');
+// const listingRoutes = require('./routes/listing.routes');
 const onboardingRoutes = require('./routes/onboarding.routes');
 const eventRoutes = require('./routes/event.routes');
 const dashboardRoutes = require('./routes/dashboard.routes');
@@ -32,7 +32,7 @@ app.get('/health', (req, res) => {
 });
 
 app.use('/api/auth', authRoutes);
-app.use('/api/listings', listingRoutes);
+// app.use('/api/listings', listingRoutes);
 app.use('/api/onboarding', onboardingRoutes);
 app.use('/api/events', eventRoutes);
 app.use('/api/dashboard', dashboardRoutes);

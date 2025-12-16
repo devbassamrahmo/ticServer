@@ -1,70 +1,54 @@
+// src/models/listing.model.js
 const db = require('../config/db');
 
-// === normalizeExtraData نفسه اللي عندك ===
 function normalizeExtraData(extraData = {}) {
   const data = { ...extraData };
 
-  // 1) حد أقصى 10 صور/فيديو
-  if (Array.isArray(data.images)) {
-    data.images = data.images.slice(0, 10);
-  } else if (data.images == null) {
-    data.images = [];
-  }
+  // max 10 images
+  if (Array.isArray(data.images)) data.images = data.images.slice(0, 10);
+  else if (data.images == null) data.images = [];
 
-  // 2) المميزات لازم تكون Array
-  if (!Array.isArray(data.features)) {
-    data.features = Array.isArray(data.features) ? data.features : [];
-  }
+  // features: Array
+  if (!Array.isArray(data.features)) data.features = [];
 
-  // 3) project_info.files موجودة بس للمشاريع
+  // project_info files normalization
   if (data.project_info && typeof data.project_info === 'object') {
     const p = data.project_info;
     p.is_project = Boolean(p.is_project);
-
     p.files = p.files || {};
-    const filesKeys = ['brochure', 'unit_plans', 'payment_plan', 'price_table'];
-    filesKeys.forEach((k) => {
+    ['brochure', 'unit_plans', 'payment_plan', 'price_table'].forEach((k) => {
       if (p.files[k] != null && typeof p.files[k] !== 'string') {
         p.files[k] = String(p.files[k]);
       }
     });
   }
 
-  // 4) ما نخزن معلومات رخصة الإعلان (بتنجيب من API ثاني)
-  const licenseKeys = [
-    'ad_license_number',
-    'ad_license_issue_date',
-    'ad_license_expiry_date',
-    'site_ad_number',
-    'ad_source',
-  ];
-  licenseKeys.forEach((k) => {
-    if (k in data) delete data[k];
-  });
+  // remove license keys (external API)
+  ['ad_license_number','ad_license_issue_date','ad_license_expiry_date','site_ad_number','ad_source']
+    .forEach((k) => { if (k in data) delete data[k]; });
 
   return data;
 }
 
-// ========== الدالة العامة (تبقى موجودة) ==========
-async function createListing(data) {
-  const {
-    dealer_id,
-    site_id,
-    type,
-    title,
-    description,
-    price,
-    currency,
-    status,
-    license_status,
-    city,
-    category,
-    is_published,
-    extraData,
-  } = data;
-
+// ==========================
+// Private (Dashboard)
+// ==========================
+async function createListing({
+  dealer_id,
+  site_id, // REQUIRED
+  type,
+  title,
+  description,
+  price,
+  currency,
+  status,
+  license_status,
+  city,
+  category,
+  is_published,
+  extraData,
+}) {
   const normalizedData = normalizeExtraData(extraData || {});
-
   const result = await db.query(
     `INSERT INTO listings (
       dealer_id, site_id, type, title, description,
@@ -78,16 +62,16 @@ async function createListing(data) {
     RETURNING *`,
     [
       dealer_id,
-      site_id || null,
+      site_id,
       type,
       title,
-      description,
+      description || null,
       price,
       currency || 'SAR',
       status || 'draft',
       license_status || 'pending',
-      city,
-      category,
+      city || null,
+      category || null,
       is_published ?? false,
       normalizedData,
     ]
@@ -96,10 +80,9 @@ async function createListing(data) {
   return result.rows[0];
 }
 
-// ========== دوال عامة لقراءة / تعديل ==========
-
 async function getListingsForDealer({
   dealer_id,
+  site_id,
   status,
   type,
   search,
@@ -107,58 +90,37 @@ async function getListingsForDealer({
   page = 1,
   pageSize = 10,
 }) {
-  const conditions = ['l.dealer_id = $1'];
-  const params = [dealer_id];
-  let idx = params.length + 1;
+  const conditions = ['l.dealer_id = $1', 'l.site_id = $2'];
+  const params = [dealer_id, site_id];
+  let idx = 3;
 
-  if (status) {
-    conditions.push(`l.status = $${idx++}`);
-    params.push(status);
-  }
-
-  if (type) {
-    conditions.push(`l.type = $${idx++}`);
-    params.push(type);
-  }
-
-  if (city) {
-    conditions.push(`l.city ILIKE $${idx++}`);
-    params.push(`%${city}%`);
-  }
-
+  if (status) { conditions.push(`l.status = $${idx++}`); params.push(status); }
+  if (type) { conditions.push(`l.type = $${idx++}`); params.push(type); }
+  if (city) { conditions.push(`l.city ILIKE $${idx++}`); params.push(`%${city}%`); }
   if (search) {
     conditions.push(`(l.title ILIKE $${idx} OR l.description ILIKE $${idx})`);
     params.push(`%${search}%`);
     idx++;
   }
 
-  const where = conditions.length ? `WHERE ${conditions.join(' AND ')}` : '';
-
+  const where = `WHERE ${conditions.join(' AND ')}`;
   const offset = (page - 1) * pageSize;
 
-  const listQuery = `
-    SELECT
-      l.*,
-      COALESCE(SUM(CASE WHEN e.event_type = 'view' THEN 1 END), 0) AS views,
-      COALESCE(SUM(CASE WHEN e.event_type IN ('whatsapp_click', 'call_click') THEN 1 END), 0) AS contacts
-    FROM listings l
-    LEFT JOIN listing_events e ON e.listing_id = l.id
-    ${where}
-    GROUP BY l.id
-    ORDER BY l.created_at DESC
-    LIMIT ${pageSize} OFFSET ${offset}
-  `;
+  const listRes = await db.query(
+    `SELECT l.*
+     FROM listings l
+     ${where}
+     ORDER BY l.created_at DESC
+     LIMIT $${idx++} OFFSET $${idx++}`,
+    [...params, pageSize, offset]
+  );
 
-  const countQuery = `
-    SELECT COUNT(*) AS total
-    FROM listings l
-    ${where}
-  `;
-
-  const [listRes, countRes] = await Promise.all([
-    db.query(listQuery, params),
-    db.query(countQuery, params),
-  ]);
+  const countRes = await db.query(
+    `SELECT COUNT(*) AS total
+     FROM listings l
+     ${where}`,
+    params
+  );
 
   return {
     items: listRes.rows,
@@ -168,27 +130,20 @@ async function getListingsForDealer({
   };
 }
 
-async function updateListing(id, dealer_id, fields) {
+async function updateListing(id, dealer_id, site_id, fields) {
   const allowedFields = [
-    'title',
-    'description',
-    'price',
-    'currency',
-    'status',
-    'license_status',
-    'city',
-    'category',
-    'is_published',
-    'data',
+    'title','description','price','currency',
+    'status','license_status','city','category',
+    'is_published','data',
   ];
-
-  const setParts = [];
-  const params = [];
-  let idx = 1;
 
   if (fields.data !== undefined) {
     fields.data = normalizeExtraData(fields.data || {});
   }
+
+  const setParts = [];
+  const params = [];
+  let idx = 1;
 
   for (const key of allowedFields) {
     if (fields[key] !== undefined) {
@@ -199,222 +154,129 @@ async function updateListing(id, dealer_id, fields) {
 
   if (!setParts.length) return null;
 
-  params.push(id);
-  params.push(dealer_id);
+  params.push(id, dealer_id, site_id);
 
-  const query = `
-    UPDATE listings
-    SET ${setParts.join(', ')}, updated_at = NOW()
-    WHERE id = $${idx++} AND dealer_id = $${idx}
-    RETURNING *
-  `;
+  const result = await db.query(
+    `UPDATE listings
+     SET ${setParts.join(', ')}, updated_at = NOW()
+     WHERE id = $${idx++} AND dealer_id = $${idx++} AND site_id = $${idx}
+     RETURNING *`,
+    params
+  );
 
-  const result = await db.query(query, params);
   return result.rows[0] || null;
 }
 
-async function deleteListing(id, dealer_id) {
+async function deleteListing(id, dealer_id, site_id) {
   const result = await db.query(
     `DELETE FROM listings
-     WHERE id = $1 AND dealer_id = $2`,
-    [id, dealer_id]
+     WHERE id = $1 AND dealer_id = $2 AND site_id = $3`,
+    [id, dealer_id, site_id]
   );
-
   return result.rowCount > 0;
 }
 
-async function getFeaturedListingsForDealer(dealerId, { limit = 6 }) {
+/* wrappers (private) */
+const createPropertyListing = (data) => createListing({ ...data, type: 'property' });
+const createProjectListing  = (data) => createListing({ ...data, type: 'project' });
+
+const getPropertiesForDealer = (opts) => getListingsForDealer({ ...opts, type: 'property' });
+const getProjectsForDealer  = (opts) => getListingsForDealer({ ...opts, type: 'project' });
+
+async function updatePropertyListing(id, dealer_id, site_id, fields) {
+  const updated = await updateListing(id, dealer_id, site_id, fields);
+  if (!updated || updated.type !== 'property') return null;
+  return updated;
+}
+
+async function updateProjectListing(id, dealer_id, site_id, fields) {
+  const updated = await updateListing(id, dealer_id, site_id, fields);
+  if (!updated || updated.type !== 'project') return null;
+  return updated;
+}
+
+// ==========================
+// Public (By site_id)
+// ==========================
+async function getFeaturedListingsForSite(site_id, { limit = 6 } = {}) {
   const result = await db.query(
-    `SELECT
-       l.*,
-       COALESCE(SUM(CASE WHEN e.event_type = 'view' THEN 1 END), 0) AS views,
-       COALESCE(SUM(CASE WHEN e.event_type IN ('whatsapp_click','call_click') THEN 1 END), 0) AS contacts
+    `SELECT l.*
      FROM listings l
-     LEFT JOIN listing_events e ON e.listing_id = l.id
-     WHERE l.dealer_id = $1
+     WHERE l.site_id = $1
+       AND l.type IN ('property','project')
        AND l.status = 'active'
        AND l.is_featured = TRUE
-     GROUP BY l.id
+       AND l.is_published = TRUE
      ORDER BY l.created_at DESC
      LIMIT $2`,
-    [dealerId, limit]
+    [site_id, limit]
   );
-
   return result.rows;
 }
 
-// ========== البحث العام (ممكن نخصصه للعقارات لاحقاً) ==========
-async function searchPublicListings(dealerId, filters = {}, pagination = {}) {
-  const {
-    city,
-    district,
-    purpose,
-    property_type,
-    min_rooms,
-    max_rooms,
-    min_area,
-    max_area,
-    min_price,
-    max_price,
-    min_age,
-    max_age,
-  } = filters;
-
-  const page = Number(pagination.page) || 1;
-  const pageSize = Number(pagination.pageSize) || 12;
+async function searchPublicListingsForSite(site_id, filters = {}, pagination = {}) {
+  // خليها بسيطة هلق، وبترجعوا للتفاصيل لاحقاً
+  const page = Number(pagination.page) || Number(filters.page) || 1;
+  const pageSize = Number(pagination.pageSize) || Number(filters.pageSize) || 12;
   const offset = (page - 1) * pageSize;
 
-  const whereParts = [
-    'l.dealer_id = $1',
-    "l.status = 'active'",
-  ];
-  const params = [dealerId];
-  let idx = params.length + 1;
+  const result = await db.query(
+    `SELECT l.*
+     FROM listings l
+     WHERE l.site_id = $1
+       AND l.type IN ('property','project')
+       AND l.status = 'active'
+       AND l.is_published = TRUE
+     ORDER BY l.created_at DESC
+     LIMIT $2 OFFSET $3`,
+    [site_id, pageSize, offset]
+  );
 
-  function addFilter(condition, value) {
-    if (value !== undefined && value !== null && value !== '') {
-      whereParts.push(condition.replace(/\?/g, `$${idx++}`));
-      params.push(value);
-    }
-  }
-
-  if (city) addFilter('l.city = ?', city);
-  if (district) addFilter('l.district = ?', district);
-  if (purpose) addFilter('l.purpose = ?', purpose);
-  if (property_type) addFilter('l.property_type = ?', property_type);
-
-  if (min_rooms) addFilter('l.rooms >= ?', Number(min_rooms));
-  if (max_rooms) addFilter('l.rooms <= ?', Number(max_rooms));
-
-  if (min_area) addFilter('l.area >= ?', Number(min_area));
-  if (max_area) addFilter('l.area <= ?', Number(max_area));
-
-  if (min_price) addFilter('l.price >= ?', Number(min_price));
-  if (max_price) addFilter('l.price <= ?', Number(max_price));
-
-  if (min_age) addFilter('l.age_years >= ?', Number(min_age));
-  if (max_age) addFilter('l.age_years <= ?', Number(max_age));
-
-  const whereClause = whereParts.join(' AND ');
-
-  const listQuery = `
-    SELECT
-      l.*,
-      COALESCE(SUM(CASE WHEN e.event_type = 'view' THEN 1 END), 0) AS views,
-      COALESCE(SUM(CASE WHEN e.event_type IN ('whatsapp_click','call_click') THEN 1 END), 0) AS contacts
-    FROM listings l
-    LEFT JOIN listing_events e ON e.listing_id = l.id
-    WHERE ${whereClause}
-    GROUP BY l.id
-    ORDER BY l.created_at DESC
-    LIMIT ${pageSize} OFFSET ${offset}
-  `;
-
-  const countQuery = `
-    SELECT COUNT(*) AS total
-    FROM listings l
-    WHERE ${whereClause}
-  `;
-
-  const [listRes, countRes] = await Promise.all([
-    db.query(listQuery, params),
-    db.query(countQuery, params),
-  ]);
+  const countRes = await db.query(
+    `SELECT COUNT(*) AS total
+     FROM listings l
+     WHERE l.site_id = $1
+       AND l.type IN ('property','project')
+       AND l.status = 'active'
+       AND l.is_published = TRUE`,
+    [site_id]
+  );
 
   return {
-    items: listRes.rows,
+    items: result.rows,
     total: Number(countRes.rows[0].total),
     page,
     pageSize,
   };
 }
 
-async function getPublicListingById(dealerId, listingId) {
+async function getPublicListingByIdForSite(site_id, listingId) {
   const res = await db.query(
-    `SELECT
-       l.*,
-       COALESCE(SUM(CASE WHEN e.event_type = 'view' THEN 1 END), 0) AS views,
-       COALESCE(SUM(CASE WHEN e.event_type IN ('whatsapp_click','call_click') THEN 1 END), 0) AS contacts
+    `SELECT l.*
      FROM listings l
-     LEFT JOIN listing_events e ON e.listing_id = l.id
      WHERE l.id = $1
-       AND l.dealer_id = $2
+       AND l.site_id = $2
+       AND l.type IN ('property','project')
        AND l.status = 'active'
-     GROUP BY l.id
+       AND l.is_published = TRUE
      LIMIT 1`,
-    [listingId, dealerId]
+    [listingId, site_id]
   );
-
   return res.rows[0] || null;
 }
 
-/* ================================
- *  🔥 قسم خاص بالعقارات (property)
- * ================================ */
-
-async function createPropertyListing(data) {
-  return createListing({
-    ...data,
-    type: 'property',
-  });
-}
-
-async function getPropertiesForDealer(options) {
-  return getListingsForDealer({
-    ...options,
-    type: 'property',
-  });
-}
-
-async function updatePropertyListing(id, dealer_id, fields) {
-  const updated = await updateListing(id, dealer_id, fields);
-  if (!updated) return null;
-  if (updated.type !== 'property') return null; // أمان: ما نعدل مشروع بالغلط
-  return updated;
-}
-
-/* ================================
- *  🔥 قسم خاص بالمشاريع (project)
- * ================================ */
-
-async function createProjectListing(data) {
-  return createListing({
-    ...data,
-    type: 'project',
-  });
-}
-
-async function getProjectsForDealer(options) {
-  return getListingsForDealer({
-    ...options,
-    type: 'project',
-  });
-}
-
-async function updateProjectListing(id, dealer_id, fields) {
-  const updated = await updateListing(id, dealer_id, fields);
-  if (!updated) return null;
-  if (updated.type !== 'project') return null;
-  return updated;
-}
-
 module.exports = {
-  // عام
-  createListing,
-  getListingsForDealer,
-  updateListing,
-  deleteListing,
-  getFeaturedListingsForDealer,
-  searchPublicListings,
-  getPublicListingById,
-
-  // عقارات
+  // private
   createPropertyListing,
-  getPropertiesForDealer,
-  updatePropertyListing,
-
-  // مشاريع
   createProjectListing,
+  getPropertiesForDealer,
   getProjectsForDealer,
+  updatePropertyListing,
   updateProjectListing,
+  deleteListing,
+
+  // public by site_id
+  getFeaturedListingsForSite,
+  searchPublicListingsForSite,
+  getPublicListingByIdForSite,
 };

@@ -5,39 +5,31 @@ const siteController = require('../controllers/site.controller');
 const { authRequired } = require('../middleware/auth');
 
 // ===== PUBLIC =====
-
-// إعدادات الموقع
 router.get('/public/:slug', siteController.getPublicSiteConfig);
-
-// فحص الـ slug
 router.get('/check-slug', siteController.checkSlug);
 
-// عقارات (realestate) لموقع معيّن
-router.get(
-  '/public/:slug/listings/featured',
-  siteController.getFeaturedRealestateForSite
-);
+// Realestate public listings for a site
+router.get('/public/:slug/listings/featured', siteController.getFeaturedRealestateForSite);
+router.get('/public/:slug/listings/search', siteController.searchRealestateForSite);
+router.get('/public/:slug/listings/:listingId', siteController.getRealestateDetailsForSite);
 
-router.get(
-  '/public/:slug/listings/search',
-  siteController.searchRealestateForSite
-);
+// Cars public endpoints for a site
+router.get('/public/:slug/cars/featured', siteController.getFeaturedCarsForPublicSite);
+router.get('/public/:slug/cars', siteController.searchCarsForSite);
+router.get('/public/:slug/cars/:carId', siteController.getCarDetailsForSite);
 
-router.get(
-  '/public/:slug/listings/:listingId',
-  siteController.getRealestateDetailsForSite
-);
-
-// ===== PRIVATE (لوحة التحكم) =====
+// ===== PRIVATE =====
 router.use(authRequired);
 
-router.get('/', siteController.getMySite);     // ?sector=cars|realestate
-router.post('/', siteController.upsertMySite);
+router.get('/', siteController.getMySite);                // ?sector=cars|realestate
+router.post('/', siteController.upsertMySite);            // upsert full
 router.post('/template', siteController.setTemplateStep);
 
 router.patch('/basic', siteController.updateMySiteBasic);
 router.patch('/theme', siteController.updateMySiteTheme);
 router.patch('/settings', siteController.updateMySiteSettings);
 router.patch('/publish', siteController.setPublishState);
+
 router.put('/', siteController.updateMySiteAll);
+
 module.exports = router;

@@ -3,15 +3,19 @@ const jwt = require('jsonwebtoken');
 exports.authRequired = (req, res, next) => {
   const authHeader = req.headers.authorization;
 
-  if (!authHeader)
+  if (!authHeader) {
     return res.status(401).json({ success: false, message: 'توكن مفقود' });
+  }
 
-  const token = authHeader.split(' ')[1];
+  const [scheme, token] = authHeader.split(' ');
+
+  if (scheme !== 'Bearer' || !token) {
+    return res.status(401).json({ success: false, message: 'صيغة التوكن غير صحيحة' });
+  }
 
   try {
     const decoded = jwt.verify(token, process.env.JWT_SECRET);
-    console.log(decoded)
-    // نضيف البيانات للـ request
+
     req.user = {
       id: decoded.id,
       phone: decoded.phone,
@@ -20,8 +24,6 @@ exports.authRequired = (req, res, next) => {
 
     next();
   } catch (err) {
-    return res
-      .status(401)
-      .json({ success: false, message: 'توكن غير صالح أو منتهي' });
+    return res.status(401).json({ success: false, message: 'توكن غير صالح أو منتهي' });
   }
 };

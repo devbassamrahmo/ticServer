@@ -138,8 +138,7 @@ exports.verifyOtp = async (req, res) => {
 
     await markOtpUsed(otpRow.id);
     const user = await findUserByPhone(phone);
-    console.log('DB user admin field:', user.is_admin, user.isAdmin, user);
-    console.log("user us " , user)
+    
     if (!user) {
       // ما عنده حساب → الفرونت يفتح فورم المعلومات
       return res.json({

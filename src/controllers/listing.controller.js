@@ -1,19 +1,16 @@
-// src/controllers/listing.controller.js
 const {
-  createListing,
-  getListingsForDealer,
-  updateListing,
-  deleteListing,
-
   createPropertyListing,
-  getPropertiesForDealer,
-  updatePropertyListing,
-
   createProjectListing,
+  getPropertiesForDealer,
   getProjectsForDealer,
+  updatePropertyListing,
   updateProjectListing,
+  deleteListing,
 } = require('../models/listing.model');
+
+const { getSiteByOwner } = require('../models/site.model');
 const { completeStep } = require('../models/onboarding.model');
+
 function buildExtraDataFromBody(body) {
   const {
     basic,
@@ -24,36 +21,61 @@ function buildExtraDataFromBody(body) {
     license,
     ad_info,
     contact,
-    media,
+    media, // الفرونت عم يبعت media
   } = body;
+
+  const images = Array.isArray(media) ? media : []; // ✅ مهم: model بيقرأ data.images
 
   return {
     basic: basic || {},
     details: details || {},
     location: location || {},
-    features: features || {},
+
+    // خليها Array
+    features: Array.isArray(features) ? features : [],
+
     guarantees: guarantees || '',
     license: license || {},
     ad_info: ad_info || {},
     contact: contact || {},
-    media: media || [],
+
+    // ✅ نخزن الصور بالاسم اللي model متوقعه
+    images,
+
+    // اختياري: إذا بدك تضل محافظ على media
+    media: images,
   };
 }
 
-exports.listProperties = async (req, res) => {
+async function requireRealestateSiteOrThrow(ownerId) {
+  const site = await getSiteByOwner(ownerId, 'realestate');
+  if (!site) {
+    const err = new Error('NO_SITE');
+    err.status = 400;
+    throw err;
+  }
+  return site;
+}
+
+const noSiteResponse = (res) =>
+  res.status(400).json({
+    success: false,
+    message: 'لا يوجد موقع عقاري لهذا الحساب. أنشئ موقع realestate أولاً.',
+  });
+
+/* =========================
+   PROPERTIES
+========================= */
+async function listProperties(req, res) {
   try {
     const dealer_id = req.user.id;
+    const site = await requireRealestateSiteOrThrow(dealer_id);
 
-    const {
-      status,
-      search,
-      city,
-      page = 1,
-      pageSize = 10,
-    } = req.query;
+    const { status, search, city, page = 1, pageSize = 10 } = req.query;
 
     const result = await getPropertiesForDealer({
       dealer_id,
+      site_id: site.id,
       status,
       search,
       city,
@@ -61,19 +83,18 @@ exports.listProperties = async (req, res) => {
       pageSize: Number(pageSize),
     });
 
-    return res.json({
-      success: true,
-      ...result,
-    });
+    return res.json({ success: true, ...result });
   } catch (err) {
+    if (err.message === 'NO_SITE') return noSiteResponse(res);
     console.error('listProperties error:', err);
     return res.status(500).json({ success: false, message: 'خطأ في السيرفر' });
   }
-};
+}
 
-exports.createProperty = async (req, res) => {
+async function createProperty(req, res) {
   try {
     const dealer_id = req.user.id;
+    const site = await requireRealestateSiteOrThrow(dealer_id);
 
     const {
       title,
@@ -85,26 +106,19 @@ exports.createProperty = async (req, res) => {
       status,
       license_status,
       is_published,
-      site_id,
     } = req.body;
 
     if (!title) {
-      return res.status(400).json({
-        success: false,
-        message: 'العنوان مطلوب',
-      });
+      return res.status(400).json({ success: false, message: 'العنوان مطلوب' });
     }
 
     const extraData = buildExtraDataFromBody(req.body);
 
     const listing = await createPropertyListing({
       dealer_id,
-      site_id: site_id || null,
+      site_id: site.id,
       title,
-      description:
-        description ||
-        (req.body.ad_info && req.body.ad_info.description) ||
-        null,
+      description: description || (req.body.ad_info && req.body.ad_info.description) || null,
       price,
       currency,
       status,
@@ -115,26 +129,19 @@ exports.createProperty = async (req, res) => {
       extraData,
     });
 
-    // onboarding step: first_listing
-    try {
-      await completeStep(dealer_id, 'first_listing');
-    } catch (e) {
-      console.error('completeStep(first_listing) error:', e.message);
-    }
-
-    return res.status(201).json({
-      success: true,
-      listing,
-    });
+    try { await completeStep(dealer_id, 'first_listing'); } catch (_) {}
+    return res.status(201).json({ success: true, listing });
   } catch (err) {
+    if (err.message === 'NO_SITE') return noSiteResponse(res);
     console.error('createProperty error:', err);
     return res.status(500).json({ success: false, message: 'خطأ في السيرفر' });
   }
-};
+}
 
-exports.updateProperty = async (req, res) => {
+async function updateProperty(req, res) {
   try {
     const dealer_id = req.user.id;
+    const site = await requireRealestateSiteOrThrow(dealer_id);
     const { id } = req.params;
 
     const {
@@ -147,7 +154,6 @@ exports.updateProperty = async (req, res) => {
       status,
       license_status,
       is_published,
-
       basic,
       details,
       location,
@@ -157,12 +163,10 @@ exports.updateProperty = async (req, res) => {
       ad_info,
       contact,
       media,
-
       data,
     } = req.body;
 
     const fields = {};
-
     if (title !== undefined) fields.title = title;
     if (description !== undefined) fields.description = description;
     if (price !== undefined) fields.price = price;
@@ -173,99 +177,80 @@ exports.updateProperty = async (req, res) => {
     if (license_status !== undefined) fields.license_status = license_status;
     if (is_published !== undefined) fields.is_published = is_published;
 
+    // data جاهزة؟
     let newData = data;
 
+    // أو نبنيها من البلوكات
     if (
-      !newData &&
-      (
-        basic !== undefined ||
-        details !== undefined ||
-        location !== undefined ||
-        features !== undefined ||
-        guarantees !== undefined ||
-        license !== undefined ||
-        ad_info !== undefined ||
-        contact !== undefined ||
-        media !== undefined
-      )
+      newData === undefined &&
+      (basic !== undefined || details !== undefined || location !== undefined ||
+       features !== undefined || guarantees !== undefined || license !== undefined ||
+       ad_info !== undefined || contact !== undefined || media !== undefined)
     ) {
+      const images = Array.isArray(media) ? media : undefined;
+
       newData = {
         ...(basic !== undefined && { basic }),
         ...(details !== undefined && { details }),
         ...(location !== undefined && { location }),
-        ...(features !== undefined && { features }),
+        ...(features !== undefined && { features: Array.isArray(features) ? features : [] }),
         ...(guarantees !== undefined && { guarantees }),
         ...(license !== undefined && { license }),
         ...(ad_info !== undefined && { ad_info }),
         ...(contact !== undefined && { contact }),
-        ...(media !== undefined && { media }),
+        ...(images !== undefined && { images, media: images }),
       };
     }
 
-    if (newData !== undefined) {
-      fields.data = newData;
+    if (newData !== undefined) fields.data = newData;
+
+    if (!Object.keys(fields).length) {
+      return res.status(400).json({ success: false, message: 'لا يوجد أي حقل للتعديل' });
     }
 
-    if (Object.keys(fields).length === 0) {
-      return res.status(400).json({
-        success: false,
-        message: 'لا يوجد أي حقل للتعديل',
-      });
-    }
-
-    const updated = await updatePropertyListing(id, dealer_id, fields);
-
+    const updated = await updatePropertyListing(id, dealer_id, site.id, fields);
     if (!updated) {
-      return res.status(404).json({
-        success: false,
-        message: 'الإعلان غير موجود أو ليس عقار',
-      });
+      return res.status(404).json({ success: false, message: 'الإعلان غير موجود أو ليس عقار' });
     }
 
-    return res.json({
-      success: true,
-      listing: updated,
-    });
+    return res.json({ success: true, listing: updated });
   } catch (err) {
+    if (err.message === 'NO_SITE') return noSiteResponse(res);
     console.error('updateProperty error:', err);
     return res.status(500).json({ success: false, message: 'خطأ في السيرفر' });
   }
-};
+}
 
-exports.deleteProperty = async (req, res) => {
+async function deleteProperty(req, res) {
   try {
     const dealer_id = req.user.id;
+    const site = await requireRealestateSiteOrThrow(dealer_id);
     const { id } = req.params;
 
-    const ok = await deleteListing(id, dealer_id);
-    if (!ok) {
-      return res.status(404).json({
-        success: false,
-        message: 'الإعلان غير موجود',
-      });
-    }
+    const ok = await deleteListing(id, dealer_id, site.id);
+    if (!ok) return res.status(404).json({ success: false, message: 'الإعلان غير موجود' });
 
     return res.json({ success: true });
   } catch (err) {
+    if (err.message === 'NO_SITE') return noSiteResponse(res);
     console.error('deleteProperty error:', err);
     return res.status(500).json({ success: false, message: 'خطأ في السيرفر' });
   }
-};
+}
 
-exports.listProjects = async (req, res) => {
+/* =========================
+   PROJECTS
+========================= */
+async function listProjects(req, res) {
   try {
     const dealer_id = req.user.id;
+    const site = await requireRealestateSiteOrThrow(dealer_id);
 
-    const {
-      status,
-      search,
-      city,
-      page = 1,
-      pageSize = 10,
-    } = req.query;
+    const { status, search, city, page = 1, pageSize = 10 } = req.query;
 
     const result = await getProjectsForDealer({
       dealer_id,
+      site_id: site.id,
       status,
       search,
       city,
@@ -273,19 +258,18 @@ exports.listProjects = async (req, res) => {
       pageSize: Number(pageSize),
     });
 
-    return res.json({
-      success: true,
-      ...result,
-    });
+    return res.json({ success: true, ...result });
   } catch (err) {
+    if (err.message === 'NO_SITE') return noSiteResponse(res);
     console.error('listProjects error:', err);
     return res.status(500).json({ success: false, message: 'خطأ في السيرفر' });
   }
-};
+}
 
-exports.createProject = async (req, res) => {
+async function createProject(req, res) {
   try {
     const dealer_id = req.user.id;
+    const site = await requireRealestateSiteOrThrow(dealer_id);
 
     const {
       title,
@@ -297,26 +281,19 @@ exports.createProject = async (req, res) => {
       status,
       license_status,
       is_published,
-      site_id,
     } = req.body;
 
     if (!title) {
-      return res.status(400).json({
-        success: false,
-        message: 'العنوان مطلوب',
-      });
+      return res.status(400).json({ success: false, message: 'العنوان مطلوب' });
     }
 
     const extraData = buildExtraDataFromBody(req.body);
 
     const listing = await createProjectListing({
       dealer_id,
-      site_id: site_id || null,
+      site_id: site.id,
       title,
-      description:
-        description ||
-        (req.body.ad_info && req.body.ad_info.description) ||
-        null,
+      description: description || (req.body.ad_info && req.body.ad_info.description) || null,
       price,
       currency,
       status,
@@ -327,26 +304,19 @@ exports.createProject = async (req, res) => {
       extraData,
     });
 
-    // onboarding step: first_listing
-    try {
-      await completeStep(dealer_id, 'first_listing');
-    } catch (e) {
-      console.error('completeStep(first_listing) error:', e.message);
-    }
-
-    return res.status(201).json({
-      success: true,
-      listing,
-    });
+    try { await completeStep(dealer_id, 'first_listing'); } catch (_) {}
+    return res.status(201).json({ success: true, listing });
   } catch (err) {
+    if (err.message === 'NO_SITE') return noSiteResponse(res);
     console.error('createProject error:', err);
     return res.status(500).json({ success: false, message: 'خطأ في السيرفر' });
   }
-};
+}
 
-exports.updateProject = async (req, res) => {
+async function updateProject(req, res) {
   try {
     const dealer_id = req.user.id;
+    const site = await requireRealestateSiteOrThrow(dealer_id);
     const { id } = req.params;
 
     const {
@@ -359,22 +329,10 @@ exports.updateProject = async (req, res) => {
       status,
       license_status,
       is_published,
-
-      basic,
-      details,
-      location,
-      features,
-      guarantees,
-      license,
-      ad_info,
-      contact,
-      media,
-
       data,
     } = req.body;
 
     const fields = {};
-
     if (title !== undefined) fields.title = title;
     if (description !== undefined) fields.description = description;
     if (price !== undefined) fields.price = price;
@@ -384,320 +342,49 @@ exports.updateProject = async (req, res) => {
     if (status !== undefined) fields.status = status;
     if (license_status !== undefined) fields.license_status = license_status;
     if (is_published !== undefined) fields.is_published = is_published;
+    if (data !== undefined) fields.data = data;
 
-    let newData = data;
-
-    if (
-      !newData &&
-      (
-        basic !== undefined ||
-        details !== undefined ||
-        location !== undefined ||
-        features !== undefined ||
-        guarantees !== undefined ||
-        license !== undefined ||
-        ad_info !== undefined ||
-        contact !== undefined ||
-        media !== undefined
-      )
-    ) {
-      newData = {
-        ...(basic !== undefined && { basic }),
-        ...(details !== undefined && { details }),
-        ...(location !== undefined && { location }),
-        ...(features !== undefined && { features }),
-        ...(guarantees !== undefined && { guarantees }),
-        ...(license !== undefined && { license }),
-        ...(ad_info !== undefined && { ad_info }),
-        ...(contact !== undefined && { contact }),
-        ...(media !== undefined && { media }),
-      };
+    if (!Object.keys(fields).length) {
+      return res.status(400).json({ success: false, message: 'لا يوجد أي حقل للتعديل' });
     }
 
-    if (newData !== undefined) {
-      fields.data = newData;
-    }
-
-    if (Object.keys(fields).length === 0) {
-      return res.status(400).json({
-        success: false,
-        message: 'لا يوجد أي حقل للتعديل',
-      });
-    }
-
-    const updated = await updateProjectListing(id, dealer_id, fields);
-
+    const updated = await updateProjectListing(id, dealer_id, site.id, fields);
     if (!updated) {
-      return res.status(404).json({
-        success: false,
-        message: 'الإعلان غير موجود أو ليس مشروع',
-      });
+      return res.status(404).json({ success: false, message: 'الإعلان غير موجود أو ليس مشروع' });
     }
 
-    return res.json({
-      success: true,
-      listing: updated,
-    });
+    return res.json({ success: true, listing: updated });
   } catch (err) {
+    if (err.message === 'NO_SITE') return noSiteResponse(res);
     console.error('updateProject error:', err);
     return res.status(500).json({ success: false, message: 'خطأ في السيرفر' });
   }
-};
+}
 
-exports.deleteProject = async (req, res) => {
+async function deleteProject(req, res) {
   try {
     const dealer_id = req.user.id;
+    const site = await requireRealestateSiteOrThrow(dealer_id);
     const { id } = req.params;
 
-    const ok = await deleteListing(id, dealer_id);
-    if (!ok) {
-      return res.status(404).json({
-        success: false,
-        message: 'الإعلان غير موجود',
-      });
-    }
+    const ok = await deleteListing(id, dealer_id, site.id);
+    if (!ok) return res.status(404).json({ success: false, message: 'الإعلان غير موجود' });
 
     return res.json({ success: true });
   } catch (err) {
+    if (err.message === 'NO_SITE') return noSiteResponse(res);
     console.error('deleteProject error:', err);
     return res.status(500).json({ success: false, message: 'خطأ في السيرفر' });
   }
-};
+}
 
-
-exports.listListings = async (req, res) => {
-  try {
-    const dealer_id = req.user.id; // حالياً نفس user.id
-
-    const {
-      status,
-      type,
-      search,
-      city,
-      page = 1,
-      pageSize = 10,
-    } = req.query;
-
-    const result = await getListingsForDealer({
-      dealer_id,
-      status,
-      type,
-      search,
-      city,
-      page: Number(page),
-      pageSize: Number(pageSize),
-    });
-
-    return res.json({
-      success: true,
-      ...result,
-    });
-  } catch (err) {
-    console.error('listListings error:', err);
-    return res.status(500).json({ success: false, message: 'خطأ في السيرفر' });
-  }
-};
-
-exports.createListing = async (req, res) => {
-  try {
-    const dealer_id = req.user.id; // مؤقتاً
-
-    const {
-      type = 'property',
-      title,
-      description,
-      price,
-      currency,
-      city,
-      category,
-      status,
-      license_status,
-      is_published,
-
-      basic,
-      details,
-      location,
-      features,
-      guarantees,
-      license,
-      ad_info,
-      contact,
-      media,
-
-      site_id,
-    } = req.body;
-
-    if (!type || !title) {
-      return res.status(400).json({
-        success: false,
-        message: 'النوع والعنوان مطلوبان',
-      });
-    }
-
-    // نبني JSON موحّد للتفاصيل
-    const extraData = {
-      basic: basic || {},
-      details: details || {},
-      location: location || {},
-      features: features || {},
-      guarantees: guarantees || '',
-      license: license || {},
-      ad_info: ad_info || {},
-      contact: contact || {},
-      media: media || [],
-    };
-
-    const listing = await createListing({
-      dealer_id,
-      site_id: site_id || null,
-      type,
-      title,
-      description: description || (ad_info && ad_info.description) || null,
-      price,
-      currency,
-      status,
-      license_status,
-      city,
-      category,
-      is_published,
-      extraData,
-    });
-
-    // onboarding step: first_listing
-    try {
-      await completeStep(dealer_id, 'first_listing');
-    } catch (e) {
-      console.error('completeStep(first_listing) error:', e.message);
-    }
-
-    return res.status(201).json({
-      success: true,
-      listing,
-    });
-  } catch (err) {
-    console.error('createListing error:', err);
-    return res.status(500).json({ success: false, message: 'خطأ في السيرفر' });
-  }
-};
-
-exports.updateListing = async (req, res) => {
-  try {
-    const dealer_id = req.user.id;
-    const { id } = req.params;
-
-    const {
-      // الحقول الأساسية
-      title,
-      description,
-      price,
-      currency,
-      city,
-      category,
-      status,
-      license_status,
-      is_published,
-
-      // نفس البلوكات اللي استخدمناها في createListing
-      basic,
-      details,
-      location,
-      features,
-      guarantees,
-      license,
-      ad_info,
-      contact,
-      media,
-
-      // لو حاب تبعت data جاهزة
-      data,
-    } = req.body;
-
-    const fields = {};
-
-    if (title !== undefined) fields.title = title;
-    if (description !== undefined) fields.description = description;
-    if (price !== undefined) fields.price = price;
-    if (currency !== undefined) fields.currency = currency;
-    if (city !== undefined) fields.city = city;
-    if (category !== undefined) fields.category = category;
-    if (status !== undefined) fields.status = status;
-    if (license_status !== undefined) fields.license_status = license_status;
-    if (is_published !== undefined) fields.is_published = is_published;
-
-    // نبني الـ data من البلوكات لو مبعوثة
-    let newData = data; // لو الفرونت أرسل data كاملة جاهزة
-
-    // إذا ما أرسل data مباشرة، نبنيها من البلوكات
-    if (!newData && (
-      basic !== undefined ||
-      details !== undefined ||
-      location !== undefined ||
-      features !== undefined ||
-      guarantees !== undefined ||
-      license !== undefined ||
-      ad_info !== undefined ||
-      contact !== undefined ||
-      media !== undefined
-    )) {
-      newData = {
-        ...(basic !== undefined && { basic }),
-        ...(details !== undefined && { details }),
-        ...(location !== undefined && { location }),
-        ...(features !== undefined && { features }),
-        ...(guarantees !== undefined && { guarantees }),
-        ...(license !== undefined && { license }),
-        ...(ad_info !== undefined && { ad_info }),
-        ...(contact !== undefined && { contact }),
-        ...(media !== undefined && { media }),
-      };
-    }
-
-    if (newData !== undefined) {
-      fields.data = newData;
-    }
-
-    if (Object.keys(fields).length === 0) {
-      return res.status(400).json({
-        success: false,
-        message: 'لا يوجد أي حقل للتعديل',
-      });
-    }
-
-    const updated = await updateListing(id, dealer_id, fields);
-
-    if (!updated) {
-      return res.status(404).json({
-        success: false,
-        message: 'الإعلان غير موجود',
-      });
-    }
-
-    return res.json({
-      success: true,
-      listing: updated,
-    });
-  } catch (err) {
-    console.error('updateListing error:', err);
-    return res.status(500).json({ success: false, message: 'خطأ في السيرفر' });
-  }
-};
-
-exports.deleteListing = async (req, res) => {
-  try {
-    const dealer_id = req.user.id;
-    const { id } = req.params;
-
-    const ok = await deleteListing(id, dealer_id);
-    if (!ok) {
-      return res.status(404).json({
-        success: false,
-        message: 'الإعلان غير موجود',
-      });
-    }
-
-    return res.json({ success: true });
-  } catch (err) {
-    console.error('deleteListing error:', err);
-    return res.status(500).json({ success: false, message: 'خطأ في السيرفر' });
-  }
+module.exports = {
+  listProperties,
+  createProperty,
+  updateProperty,
+  deleteProperty,
+  listProjects,
+  createProject,
+  updateProject,
+  deleteProject,
 };
