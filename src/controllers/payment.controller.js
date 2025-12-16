@@ -20,19 +20,15 @@ function moyasarAuth() {
 // body: { amount, description, meta }
 exports.createPayment = async (req, res) => {
   try {
-    const userId = req.user.id; // من auth middleware
+    const userId = req.user.id;
     const { amount, description, meta } = req.body;
 
     if (!amount || isNaN(Number(amount))) {
-      return res.status(400).json({
-        success: false,
-        message: 'amount مطلوب (ريال سعودي)',
-      });
+      return res.status(400).json({ success: false, message: 'amount مطلوب' });
     }
 
     const halalas = Math.round(Number(amount) * 100);
 
-    // سجل محلّي في جدول payments
     const localPayment = await createPaymentRecord({
       user_id: userId,
       amount_halalas: halalas,
@@ -40,46 +36,21 @@ exports.createPayment = async (req, res) => {
       meta: meta || {},
     });
 
-    // نستخدم ميسر لإنشاء payment "مبدئي"
-    const response = await axios.post(
-      `${MOYASAR_API_URL}/payments`,
-      {
-        amount: halalas,
-        currency: 'SAR',
-        description: description || 'Site subscription',
-        // مبدئياً نستخدم stcpay أو creditcard حسب ما تخطط
-        // لكن الأفضل تستخدم الـ "Hosted payment page" تبعهم
-        source: {
-          type: 'stcpay', // ممكن تغيّرها لاحقاً
-          mobile: '500000000', // في الوضع الفعلي تاخدها من المستخدم
-        },
-        callback_url: 'https://your-site.com/payment/callback',
-      },
-      { auth: moyasarAuth() }
-    );
-
-    const gatewayPayment = response.data;
-
-    // نربط ال payment المحلي بميسر
-    await attachGatewayInfo(localPayment.id, {
-      gateway_payment_id: gatewayPayment.id,
-    });
-
-        return res.json({
+    return res.json({
       success: true,
       localPaymentId: localPayment.id,
       amount: halalas,
       currency: 'SAR',
       description: localPayment.description,
       publishableKey: process.env.MOYASAR_PUBLISHABLE_KEY,
-      callbackUrl: `${process.env.FRONTEND_URL}/payment/callback?pid=${localPayment.id}`
+      // مهم: callback يرجّعك لصفحة عند الفرونت
+      callbackUrl: `${process.env.FRONTEND_URL}/payment/callback?pid=${localPayment.id}`,
+      // optional: مرّر metadata للفرونت لتنبعث لميسّر
+      metadata: { localPaymentId: localPayment.id },
     });
   } catch (err) {
-    console.error('createPayment error:', err.response?.data || err);
-    return res.status(500).json({
-      success: false,
-      message: 'فشل إنشاء عملية الدفع',
-    });
+    console.error('createPayment error:', err);
+    return res.status(500).json({ success: false, message: 'فشل إنشاء عملية الدفع' });
   }
 };
 

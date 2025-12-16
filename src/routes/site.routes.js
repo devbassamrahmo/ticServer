@@ -33,6 +33,7 @@ router.use(authRequired);
 
 router.get('/', siteController.getMySite);     // ?sector=cars|realestate
 router.post('/', siteController.upsertMySite);
+router.post('/template', siteController.setTemplateStep);
 
 router.patch('/basic', siteController.updateMySiteBasic);
 router.patch('/theme', siteController.updateMySiteTheme);

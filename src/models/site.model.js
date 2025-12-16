@@ -22,11 +22,17 @@ function mapSiteRow(row) {
     name: row.name,
     template_key: row.template_key,
     is_published: row.is_published,
+
+    // theme
     colors: theme.colors || {},
     fonts: theme.fonts || {},
+
+    // settings
     branding: settings.branding || {},
     social: settings.social || {},
     location: settings.location || {},
+    about: settings.about || {},
+
     created_at: row.created_at,
     updated_at: row.updated_at,
   };
@@ -212,6 +218,40 @@ async function updateSiteAll(ownerId, {
 
   return result.rows[0] ? mapSiteRow(result.rows[0]) : null;
 }
+
+async function upsertSiteTemplate(ownerId, { sector, template_key }) {
+  if (!ALLOWED_TEMPLATES.includes(template_key)) throw new Error('INVALID_TEMPLATE');
+
+  const result = await db.query(
+    `INSERT INTO sites (owner_id, sector, template_key, theme, settings, is_published)
+     VALUES ($1,$2,$3,'{}'::jsonb,'{}'::jsonb,FALSE)
+     ON CONFLICT (owner_id, sector)
+     DO UPDATE SET
+       template_key = EXCLUDED.template_key,
+       updated_at = NOW()
+     RETURNING *`,
+    [ownerId, sector, template_key]
+  );
+
+  return mapSiteRow(result.rows[0]);
+}
+
+async function getSiteConfigBySlug(slug, { requirePublished = true } = {}) {
+  const res = await db.query(
+    `SELECT *
+     FROM sites
+     WHERE slug = $1
+     LIMIT 1`,
+    [slug]
+  );
+
+  const row = res.rows[0];
+  if (!row) return null;
+
+  if (requirePublished && !row.is_published) return null;
+
+  return mapSiteRow(row);
+}
 module.exports = {
   getSiteByOwner,
   upsertSiteForOwner,
@@ -222,4 +262,6 @@ module.exports = {
   upsertSiteSettings,
   setSitePublish,
   updateSiteAll,
+  upsertSiteTemplate,
+  getSiteConfigBySlug
 };

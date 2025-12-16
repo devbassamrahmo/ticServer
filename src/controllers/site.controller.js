@@ -7,6 +7,9 @@ const {
   upsertSiteTheme,
   upsertSiteSettings,
   setSitePublish,
+  upsertSiteTemplate,
+  updateSiteAll,
+  getSiteConfigBySlug,
 } = require('../models/site.model');
 const {
   getFeaturedListingsForDealer,
@@ -22,11 +25,12 @@ function buildTheme(colors, fonts) {
   };
 }
 
-function buildSettings(branding, social, location) {
+function buildSettings(branding, social, location, about) {
   return {
     branding: branding || {},
     social: social || {},
     location: location || {},
+     about: about || {},
   };
 }
 
@@ -402,5 +406,100 @@ exports.updateMySiteAll = async (req, res) => {
     }
     console.error('updateMySiteAll error:', err);
     return res.status(500).json({ success: false, message: 'خطأ في السيرفر' });
+  }
+};
+
+exports.setTemplateStep = async (req, res) => {
+  try {
+    const ownerId = req.user.id;
+    const { sector, template_key } = req.body;
+
+    if (!sector || !template_key) {
+      return res.status(400).json({ success: false, message: 'sector و template_key مطلوبة' });
+    }
+
+    const site = await upsertSiteTemplate(ownerId, { sector, template_key });
+    return res.json({ success: true, site });
+  } catch (err) {
+    if (err.message === 'INVALID_TEMPLATE') {
+      return res.status(400).json({ success: false, message: 'template_key غير صالح' });
+    }
+    console.error('setTemplateStep error:', err);
+    return res.status(500).json({ success: false, message: 'خطأ في السيرفر' });
+  }
+};
+
+exports.updateMySiteSettings = async (req, res) => {
+  try {
+    const ownerId = req.user.id;
+    const {
+      sector,
+      slug,
+      name,
+      branding,
+      social,
+      location,
+      about, // tell us about you ...الخ
+    } = req.body;
+
+    if (!sector) return res.status(400).json({ success:false, message:'sector مطلوب' });
+    if (!slug) return res.status(400).json({ success:false, message:'slug مطلوب' });
+
+    const site = await updateSiteAll(ownerId, {
+      sector,
+      slug,
+      name,
+      settings: {
+        branding: branding || {},
+        social: social || {},
+        location: location || {},
+        about: about || {},
+      },
+    });
+
+    return res.json({ success: true, site });
+  } catch (err) {
+    if (err.code === '23505') {
+      return res.status(400).json({ success:false, message:'هذا الرابط مستخدم لموقع آخر' });
+    }
+    console.error('updateMySiteSettings error:', err);
+    return res.status(500).json({ success:false, message:'خطأ في السيرفر' });
+  }
+};
+
+exports.updateMySiteTheme = async (req, res) => {
+  try {
+    const ownerId = req.user.id;
+    const { sector, colors, fonts } = req.body;
+    if (!sector) return res.status(400).json({ success:false, message:'sector مطلوب' });
+
+    const site = await updateSiteAll(ownerId, {
+      sector,
+      theme: {
+        colors: colors || {},
+        fonts: fonts || {},
+      },
+    });
+
+    return res.json({ success: true, site });
+  } catch (err) {
+    console.error('updateMySiteTheme error:', err);
+    return res.status(500).json({ success:false, message:'خطأ في السيرفر' });
+  }
+};
+
+exports.getPublicSiteConfig = async (req, res) => {
+  try {
+    const { slug } = req.params;
+
+    const site = await getSiteConfigBySlug(slug, { requirePublished: true });
+    if (!site) {
+      return res.status(404).json({ success:false, message:'الموقع غير موجود أو غير منشور' });
+    }
+
+    return res.json({ success: true, site });
+  } catch (err) {
+    console.error('getPublicSiteConfig error:', err);
+    return res.status(500).json({ success:false, message:'خطأ في السيرفر' });
   }
 };
