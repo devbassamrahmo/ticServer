@@ -6,6 +6,8 @@ const {
   updatePropertyListing,
   updateProjectListing,
   deleteListing,
+  getPropertyById,
+  getProjectById
 } = require('../models/listing.model');
 
 const { getSiteByOwner } = require('../models/site.model');
@@ -378,6 +380,39 @@ async function deleteProject(req, res) {
   }
 }
 
+async function getMyProperty (req, res)  {
+  try {
+    const dealer_id = req.user.id;
+    const { id } = req.params;
+
+    const property = await getPropertyById(id, dealer_id);
+    if (!property) {
+      return res.status(404).json({ success: false, message: 'غير موجود' });
+    }
+
+    return res.json({ success: true, property });
+  } catch (err) {
+    console.error('getMyProperty error:', err);
+    return res.status(500).json({ success: false, message: 'خطأ في السيرفر' });
+  }
+};
+
+async function getMyProject (req, res) {
+  try {
+    const dealer_id = req.user.id;
+    const { id } = req.params;
+
+    const project = await getProjectById(id, dealer_id);
+    if (!project) {
+      return res.status(404).json({ success: false, message: 'غير موجود' });
+    }
+
+    return res.json({ success: true, project });
+  } catch (err) {
+    console.error('getMyProject error:', err);
+    return res.status(500).json({ success: false, message: 'خطأ في السيرفر' });
+  }
+};
 module.exports = {
   listProperties,
   createProperty,
@@ -387,4 +422,6 @@ module.exports = {
   createProject,
   updateProject,
   deleteProject,
+  getMyProperty,
+  getMyProject
 };
