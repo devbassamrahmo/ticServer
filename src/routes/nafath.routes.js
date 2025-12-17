@@ -5,7 +5,7 @@ const nafathController = require('../controllers/nafath.controller');
 const { authRequired } = require('../middleware/auth');
 
 // المستخدم لازم يكون مسجّل عندك عشان يربط حسابه بنفاذ
-router.post('/start', authRequired, express.json(), nafathController.startLogin);
+router.post('/start', express.json(), nafathController.startLogin);
 router.get('/status/:requestId', authRequired, nafathController.checkStatus);
 
 // callback من نفاذ (ما عليه auth، نفاذ بس يضربه)
