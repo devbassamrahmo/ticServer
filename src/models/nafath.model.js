@@ -4,7 +4,7 @@ const db = require('../config/db');
 async function createNafathLogin({
   user_id,
   national_id,
-  request_id,
+  request_id, // عندك حالياً = transId (كما بالكنترولر)
   channel = 'web',
   raw_response = {},
 }) {
@@ -18,15 +18,18 @@ async function createNafathLogin({
   return res.rows[0];
 }
 
+/**
+ * ✅ نخليها تكتب raw_response كما هو (بعد ما نعمل merge بالكنترولر)
+ */
 async function updateNafathStatusByRequestId(request_id, { status, raw_response }) {
   const res = await db.query(
     `UPDATE nafath_logins
      SET status = $1,
-         raw_response = COALESCE($2, raw_response),
+         raw_response = $2,
          updated_at = NOW()
      WHERE request_id = $3
      RETURNING *`,
-    [status, raw_response || null, request_id]
+    [status, raw_response, request_id]
   );
   return res.rows[0] || null;
 }
