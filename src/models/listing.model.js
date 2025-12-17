@@ -265,6 +265,29 @@ async function getPublicListingByIdForSite(site_id, listingId) {
   return res.rows[0] || null;
 }
 
+async function getPropertyById(id, dealer_id) {
+  const res = await db.query(
+    `SELECT *
+     FROM listings
+     WHERE id = $1 AND dealer_id = $2 AND type = 'property'
+     LIMIT 1`,
+    [id, dealer_id]
+  );
+  return res.rows[0] || null;
+}
+
+async function getProjectById(id, dealer_id) {
+  const res = await db.query(
+    `SELECT *
+     FROM listings
+     WHERE id = $1 AND dealer_id = $2 AND type = 'project'
+     LIMIT 1`,
+    [id, dealer_id]
+  );
+  return res.rows[0] || null;
+}
+
+
 module.exports = {
   // private
   createPropertyListing,
@@ -274,7 +297,8 @@ module.exports = {
   updatePropertyListing,
   updateProjectListing,
   deleteListing,
-
+  getPropertyById,
+  getProjectById,
   // public by site_id
   getFeaturedListingsForSite,
   searchPublicListingsForSite,

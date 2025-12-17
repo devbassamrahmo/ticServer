@@ -390,6 +390,76 @@ async function setTemplateStep(req, res) {
   }
 }
 
+async function getPropertyDetailsForSite(req, res) {
+  try {
+    const { slug, id } = req.params;
+
+    const site = await loadRealEstateSiteOr404(slug, res);
+    if (!site) return;
+
+    const { rows } = await db.query(
+      `SELECT
+         l.*,
+         COALESCE(SUM(CASE WHEN e.event_type = 'view' THEN 1 END), 0) AS views,
+         COALESCE(SUM(CASE WHEN e.event_type IN ('whatsapp_click','call_click') THEN 1 END), 0) AS contacts
+       FROM listings l
+       LEFT JOIN listing_events e ON e.listing_id = l.id
+       WHERE l.id = $1
+         AND l.dealer_id = $2
+         AND l.status = 'active'
+         AND l.type = 'property'
+       GROUP BY l.id
+       LIMIT 1`,
+      [id, site.owner_id]
+    );
+
+    const listing = rows[0];
+    if (!listing) {
+      return res.status(404).json({ success: false, message: 'العقار غير موجود' });
+    }
+
+    return res.json({ success: true, property: listing });
+  } catch (err) {
+    console.error('getPropertyDetailsForSite error:', err);
+    return res.status(500).json({ success: false, message: 'خطأ في السيرفر' });
+  }
+};
+
+async function getProjectDetailsForSite(req, res) {
+  try {
+    const { slug, id } = req.params;
+
+    const site = await loadRealEstateSiteOr404(slug, res);
+    if (!site) return;
+
+    const { rows } = await db.query(
+      `SELECT
+         l.*,
+         COALESCE(SUM(CASE WHEN e.event_type = 'view' THEN 1 END), 0) AS views,
+         COALESCE(SUM(CASE WHEN e.event_type IN ('whatsapp_click','call_click') THEN 1 END), 0) AS contacts
+       FROM listings l
+       LEFT JOIN listing_events e ON e.listing_id = l.id
+       WHERE l.id = $1
+         AND l.dealer_id = $2
+         AND l.status = 'active'
+         AND l.type = 'project'
+       GROUP BY l.id
+       LIMIT 1`,
+      [id, site.owner_id]
+    );
+
+    const listing = rows[0];
+    if (!listing) {
+      return res.status(404).json({ success: false, message: 'المشروع غير موجود' });
+    }
+
+    return res.json({ success: true, project: listing });
+  } catch (err) {
+    console.error('getProjectDetailsForSite error:', err);
+    return res.status(500).json({ success: false, message: 'خطأ في السيرفر' });
+  }
+};
+
 module.exports = {
   getMySite,
   upsertMySite,
@@ -405,7 +475,7 @@ module.exports = {
   getFeaturedCarsForPublicSite,
   searchCarsForSite,
   getCarDetailsForSite,
-
+  getProjectDetailsForSite,
   // private site updates
   updateMySiteBasic,
   updateMySiteTheme,
@@ -413,4 +483,5 @@ module.exports = {
   setPublishState,
   updateMySiteAll,
   setTemplateStep,
+  getPropertyDetailsForSite
 };
