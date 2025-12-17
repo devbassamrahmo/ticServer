@@ -14,13 +14,25 @@ const { completeStep } = require('../models/onboarding.model');
 
 const DEBUG = String(process.env.NAFATH_DEBUG || '').toLowerCase() === 'true';
 
+function getAuthedUserId(req) {
+  // دعم أكثر من شكل حسب middleware تبعك
+  return req.user?.id || req.user?.user_id || req.userId || req.user_id || null;
+}
+
 /**
  * POST /api/auth/nafath/start
  * body: { national_id, service?, local? }
  */
 exports.startLogin = async (req, res) => {
   try {
-    const userId = req.user.id;
+    const userId = getAuthedUserId(req);
+    if (!userId) {
+      return res.status(401).json({
+        success: false,
+        message: 'Unauthorized: missing user context (token required)',
+      });
+    }
+
     const {
       national_id,
       service = process.env.NAFATH_SERVICE || 'sitec',
@@ -40,16 +52,15 @@ exports.startLogin = async (req, res) => {
       local,
     });
 
-    // نخزن transId كـ request_id (حسب تصميمك الحالي)
     const record = await createNafathLogin({
       user_id: userId,
       national_id,
-      request_id: nafathRes.transId,
+      request_id: nafathRes.transId, // (تصميمك الحالي)
       channel: 'web',
       raw_response: {
         ...(nafathRes.raw || {}),
-        clientRequestId: nafathRes.requestId, // UUID تبعك
-        random: nafathRes.random,             // مهم للاستعلام لاحقاً
+        clientRequestId: nafathRes.requestId,
+        random: nafathRes.random,
         service,
         local,
       },
@@ -57,8 +68,8 @@ exports.startLogin = async (req, res) => {
 
     return res.json({
       success: true,
-      transId: nafathRes.transId,  // يستخدمه الفرونت
-      random: nafathRes.random,    // يعرض للمستخدم
+      transId: nafathRes.transId,
+      random: nafathRes.random,
       record,
     });
   } catch (err) {
@@ -67,33 +78,33 @@ exports.startLogin = async (req, res) => {
 
     console.error('nafath startLogin error:', data || err.message || err);
 
-    // ✅ للتشخيص فقط (يتفعّل بـ NAFATH_DEBUG=true)
-    const debugPayload = DEBUG
-      ? {
-          nafath_status: status,
-          nafath_error: data,
-          msg: err.message,
-        }
-      : undefined;
-
-    return res.status(status === 500 ? 500 : status).json({
+    return res.status(500).json({
       success: false,
       message: 'فشل بدء تحقق نفاذ',
-      ...(debugPayload ? debugPayload : {}),
+      ...(DEBUG
+        ? { nafath_status: status, nafath_error: data, msg: err.message }
+        : {}),
     });
   }
 };
 
 /**
  * GET /api/auth/nafath/status/:requestId
- * requestId = transId (حسب تصميمك الحالي)
  */
 exports.checkStatus = async (req, res) => {
   try {
+    const userId = getAuthedUserId(req);
+    if (!userId) {
+      return res.status(401).json({
+        success: false,
+        message: 'Unauthorized: missing user context (token required)',
+      });
+    }
+
     const { requestId } = req.params;
 
     const record = await findByRequestId(requestId);
-    if (!record || record.user_id !== req.user.id) {
+    if (!record || record.user_id !== userId) {
       return res.status(403).json({
         success: false,
         message: 'غير مصرح',
@@ -114,7 +125,6 @@ exports.checkStatus = async (req, res) => {
       random,
     });
 
-    // ✅ مهم: merge حتى ما يطير random / clientRequestId
     const mergedRaw = {
       ...(record.raw_response || {}),
       ...(nafathRes.raw || {}),
@@ -122,23 +132,19 @@ exports.checkStatus = async (req, res) => {
     };
 
     const updated = await updateNafathStatusByRequestId(requestId, {
-      status: nafathRes.status, // pending | verified | rejected | expired
+      status: nafathRes.status,
       raw_response: mergedRaw,
     });
 
     if (nafathRes.status === 'verified') {
-      await markUserNafathVerified(req.user.id, { national_id: record.national_id });
-
-      // onboarding step
-      try {
-        await completeStep(req.user.id, 'nafath');
-      } catch (_) {}
+      await markUserNafathVerified(userId, { national_id: record.national_id });
+      try { await completeStep(userId, 'nafath'); } catch (_) {}
     }
 
     return res.json({
       success: true,
-      nafathStatus: nafathRes.nafathStatus, // WAITING | COMPLETED | ...
-      status: nafathRes.status,              // pending | verified | ...
+      nafathStatus: nafathRes.nafathStatus,
+      status: nafathRes.status,
       record: updated,
     });
   } catch (err) {
@@ -147,25 +153,14 @@ exports.checkStatus = async (req, res) => {
 
     console.error('nafath checkStatus error:', data || err.message || err);
 
-    const debugPayload = DEBUG
-      ? {
-          nafath_status: status,
-          nafath_error: data,
-          msg: err.message,
-        }
-      : undefined;
-
-    return res.status(status === 500 ? 500 : status).json({
+    return res.status(500).json({
       success: false,
       message: 'فشل الاستعلام عن حالة نفاذ',
-      ...(debugPayload ? debugPayload : {}),
+      ...(DEBUG
+        ? { nafath_status: status, nafath_error: data, msg: err.message }
+        : {}),
     });
   }
 };
 
-/**
- * Optional callback (noop حالياً)
- */
-exports.callback = async (_req, res) => {
-  return res.sendStatus(200);
-};
+exports.callback = async (_req, res) => res.sendStatus(200);
