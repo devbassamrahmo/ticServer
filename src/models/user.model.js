@@ -5,7 +5,10 @@ async function findUserByPhone(phone) {
   const result = await db.query(
     `SELECT
         id, phone, full_name, account_type, sector, company_name, email, city,
-        COALESCE(is_admin, false) AS is_admin
+        COALESCE(is_admin, false) AS is_admin,
+        COALESCE(nafath_verified,false) AS nafath_verified,
+        COALESCE(real_estate_license_verified,false) AS real_estate_license_verified,
+        COALESCE(car_license_verified,false) AS car_license_verified
      FROM users
      WHERE phone = $1
      LIMIT 1`,
@@ -106,10 +109,25 @@ async function setVerificationFlags(id, { nafath, realEstate, car }) {
   return result.rows[0] || null;
 }
 
+async function markUserNafathVerified(userId, { national_id } = {}) {
+  const res = await db.query(
+    `UPDATE users
+     SET nafath_verified = TRUE,
+         nafath_verified_at = NOW(),
+         nafath_national_id = COALESCE($2, nafath_national_id),
+         updated_at = NOW()
+     WHERE id = $1
+     RETURNING id, nafath_verified, nafath_verified_at, nafath_national_id`,
+    [userId, national_id || null]
+  );
+  return res.rows[0] || null;
+}
+
 module.exports = {
   findUserByPhone,
   createUser,
   findUserById,
   updateUserProfile,
-  setVerificationFlags
+  setVerificationFlags,
+  markUserNafathVerified
 };

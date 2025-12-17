@@ -15,8 +15,8 @@ router.post('/profile', accountController.updateProfile);
 router.post('/documents', accountController.uploadDocument);
 
 // التوثيق (محاكاة)
-router.post('/verify/nafath', accountController.verifyNafath);
-router.post('/verify/real-estate-license', accountController.verifyRealEstateLicense);
+// router.post('/verify/nafath', accountController.verifyNafath);
+// router.post('/verify/real-estate-license', accountController.verifyRealEstateLicense);
 
 // المستخدمون الفرعيون
 router.get('/sub-users', accountController.getSubUsers);

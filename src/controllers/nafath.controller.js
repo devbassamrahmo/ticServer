@@ -3,19 +3,22 @@ const {
   startVerification,
   getVerificationStatus,
 } = require('../services/nafath.service');
-
+const { markUserNafathVerified } = require('../models/user.model');
 const {
   createNafathLogin,
   updateNafathStatusByRequestId,
   findByRequestId,
 } = require('../models/nafath.model');
+const { completeStep } = require('../models/onboarding.model');
 
-// POST /api/auth/nafath/start
-// body: { national_id }
+/**
+ * POST /api/auth/nafath/start
+ * body: { national_id, service?, local? }
+ */
 exports.startLogin = async (req, res) => {
   try {
-    const userId = req.user.id; // مسجّل دخول عندك
-    const { national_id } = req.body;
+    const userId = req.user.id;
+    const { national_id, service = 'sitec', local = 'ar' } = req.body;
 
     if (!national_id) {
       return res.status(400).json({
@@ -24,26 +27,29 @@ exports.startLogin = async (req, res) => {
       });
     }
 
-    // نطلب من نفاذ بدء التحقق
     const nafathRes = await startVerification({
       nationalId: national_id,
-      channel: 'web',
+      service,
+      local,
     });
 
-    // نخزن المحاولة في DB
+    // نخزن transId كنقطة مرجعية أساسية
     const record = await createNafathLogin({
       user_id: userId,
       national_id,
-      request_id: nafathRes.requestId,
+      request_id: nafathRes.transId,
       channel: 'web',
-      raw_response: nafathRes.raw,
+      raw_response: {
+        ...nafathRes.raw,
+        clientRequestId: nafathRes.requestId,
+        random: nafathRes.random,
+      },
     });
 
     return res.json({
       success: true,
-      requestId: nafathRes.requestId,
-      code: nafathRes.randomCode,    // هاد الرقم بتعرضو للمستخدم
-      expiresAt: nafathRes.expiresAt,
+      transId: nafathRes.transId,   // يستخدمه الفرونت
+      random: nafathRes.random,     // يعرض للمستخدم
       record,
     });
   } catch (err) {
@@ -55,22 +61,50 @@ exports.startLogin = async (req, res) => {
   }
 };
 
-// GET /api/auth/nafath/status/:requestId
+/**
+ * GET /api/auth/nafath/status/:requestId
+ * requestId = transId
+ */
 exports.checkStatus = async (req, res) => {
   try {
     const { requestId } = req.params;
 
-    const nafathRes = await getVerificationStatus(requestId);
+    const record = await findByRequestId(requestId);
+    if (!record || record.user_id !== req.user.id) {
+      return res.status(403).json({
+        success: false,
+        message: 'غير مصرح',
+      });
+    }
 
-    // نحدّث الداتابيس
-    const updated = await updateNafathStatusByRequestId(requestId, {
-      status: nafathRes.status,
-      raw_response: nafathRes.raw,
+    const random = record.raw_response?.random;
+    if (!random) {
+      return res.status(400).json({
+        success: false,
+        message: 'random غير موجود لهذا الطلب',
+      });
+    }
+
+    const nafathRes = await getVerificationStatus({
+      nationalId: record.national_id,
+      transId: requestId,
+      random,
     });
 
+    const updated = await updateNafathStatusByRequestId(requestId, {
+      status: nafathRes.status, // pending | verified | ...
+      raw_response: nafathRes.raw,
+    });
+        if (nafathRes.status === 'verified') {
+      await markUserNafathVerified(req.user.id, { national_id: record.national_id });
+
+      // onboarding step
+      try { await completeStep(req.user.id, 'nafath'); } catch (_) {}
+    }
     return res.json({
       success: true,
-      status: nafathRes.status,
+      nafathStatus: nafathRes.nafathStatus, // WAITING | COMPLETED | ...
+      status: nafathRes.status,              // pending | verified | ...
       record: updated,
     });
   } catch (err) {
@@ -82,34 +116,9 @@ exports.checkStatus = async (req, res) => {
   }
 };
 
-// POST /api/auth/nafath/callback
-// هاد ال endpoint رح تحطه عند نفاذ كـ callback URL
-exports.callback = async (req, res) => {
-  try {
-    const payload = req.body;
-    console.log('Nafath callback payload:', payload);
-
-    const requestId = payload.request_id || payload.trans_id;
-    if (!requestId) return res.sendStatus(400);
-
-    // ماب لحالة موحدة
-    let status = 'pending';
-    if (payload.status === 'VERIFIED' || payload.status === 'approved') status = 'verified';
-    else if (payload.status === 'REJECTED') status = 'rejected';
-    else if (payload.status === 'EXPIRED') status = 'expired';
-
-    const updated = await updateNafathStatusByRequestId(requestId, {
-      status,
-      raw_response: payload,
-    });
-
-    // TODO: لو verified:
-    // - علم حقل user.is_verified_by_nafath = true
-    // - فعل مميزات معينة بالحساب
-
-    return res.sendStatus(200);
-  } catch (err) {
-    console.error('nafath callback error:', err);
-    return res.sendStatus(500);
-  }
+/**
+ * Optional callback (noop حالياً)
+ */
+exports.callback = async (_req, res) => {
+  return res.sendStatus(200);
 };

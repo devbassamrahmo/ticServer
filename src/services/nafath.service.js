@@ -1,57 +1,79 @@
 // src/services/nafath.service.js
 const axios = require('axios');
+const { randomUUID } = require('crypto');
 
-const baseURL = process.env.NAFATH_BASE_URL;
+const baseURL = process.env.NAFATH_BASE_URL; // https://nafath.api.elm.sa
+const appId = process.env.NAFATH_APP_ID;
+const appKey = process.env.NAFATH_APP_KEY;
 
-function nafathHeaders() {
+function headers() {
   return {
-    'Content-Type': 'application/json',
-    'X-API-KEY': process.env.NAFATH_API_KEY, // أو حسب ما يعطوك
+    'Content-Type': 'application/json;charset=utf-8',
+    'APP-ID': appId,
+    'APP-KEY': appKey,
   };
 }
 
-// 1) إرسال طلب تحقق لنفاذ
-// يرجع { requestId, randomCode, expiresAt, raw }
-async function startVerification({ nationalId, channel = 'web' }) {
-  // 🔴 ملاحظة: endpoint و body placeholders
+// تحويل حالة نفاذ إلى حالة داخلية موحدة
+function mapInternalStatus(nafathStatus) {
+  if (nafathStatus === 'COMPLETED') return 'verified';
+  if (nafathStatus === 'REJECTED') return 'rejected';
+  if (nafathStatus === 'EXPIRED') return 'expired';
+  return 'pending'; // WAITING
+}
+
+/**
+ * 1) Create MFA request (نفاذ)
+ */
+async function startVerification({ nationalId, service, local = 'ar' }) {
+  const clientRequestId = randomUUID(); // مطلوب بالـ query
+
   const res = await axios.post(
-    `${baseURL}/verify`,           // استبدلها بالمسار الصحيح من الدوكيومنت
+    `${baseURL}/api/v1/mfa/request`,
     {
-      national_id: nationalId,
-      channel,                     // web / mobile … حسب ما عندهم
-      callback_url: process.env.NAFATH_CALLBACK_URL,
+      nationalId,
+      service,
     },
-    { headers: nafathHeaders() }
+    {
+      headers: headers(),
+      params: {
+        local,
+        requestId: clientRequestId,
+      },
+    }
   );
 
-  const data = res.data;
+  const data = res.data || {};
 
-  // حسب الـ docs الفعلية، بس غالباً شي قريب من:
   return {
-    requestId: data.request_id || data.trans_id,
-    randomCode: data.random_number || data.code,  // الرقم اللي يظهر للمستخدم
-    expiresAt: data.expires_at || null,
+    requestId: clientRequestId, // ID تبعك (للتتبع)
+    transId: data.transId,      // ID تبع نفاذ
+    random: data.random,        // رقم من خانتين
     raw: data,
   };
 }
 
-// 2) الاستعلام عن حالة طلب (polling من الفرونت)
-async function getVerificationStatus(requestId) {
-  const res = await axios.get(
-    `${baseURL}/verify/${requestId}`,      // placeholder
-    { headers: nafathHeaders() }
+/**
+ * 2) Check MFA request status
+ */
+async function getVerificationStatus({ nationalId, transId, random }) {
+  const res = await axios.post(
+    `${baseURL}/api/v1/mfa/request/status`,
+    {
+      nationalId,
+      transId,
+      random,
+    },
+    {
+      headers: headers(),
+    }
   );
 
-  const data = res.data;
-
-  // ماب لحالة موحدة
-  let status = 'pending';
-  if (data.status === 'VERIFIED' || data.status === 'approved') status = 'verified';
-  else if (data.status === 'REJECTED') status = 'rejected';
-  else if (data.status === 'EXPIRED') status = 'expired';
+  const data = res.data || {};
 
   return {
-    status,
+    nafathStatus: data.status,                 // WAITING | COMPLETED | ...
+    status: mapInternalStatus(data.status),    // pending | verified | ...
     raw: data,
   };
 }
