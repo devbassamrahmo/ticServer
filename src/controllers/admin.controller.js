@@ -91,15 +91,15 @@ exports.getUserDocuments = async (req, res) => {
     const { userId } = req.params;
     const docs = await getUserDocumentsForAdmin(userId);
 
-    const items = docs.map(doc => ({
-      ...doc,
-      file_public_url: buildPublicFileUrl(doc.file_url),
-    }));
-
-    return res.json({
-      success: true,
-      items,
+    const items = docs.map((doc) => {
+      const fileUrl = doc.file_url; // لازم هاد بالضبط
+      return {
+        ...doc,
+        file_public_url: buildPublicFileUrl(fileUrl),
+      };
     });
+
+    return res.json({ success: true, items });
   } catch (err) {
     console.error('admin.getUserDocuments error:', err);
     return res.status(500).json({ success: false, message: 'خطأ في السيرفر' });
@@ -118,6 +118,9 @@ exports.reviewDocument = async (req, res) => {
         status,
         reject_reason,
       });
+
+    console.log('file_url from db:', doc.file_url);
+console.log('public_url:', buildPublicFileUrl(doc.file_url));
 
       if (!doc) {
         return res.status(404).json({
