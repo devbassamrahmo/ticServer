@@ -1,13 +1,9 @@
-function buildPublicFileUrl(path) {
-  if (!path) return null;
+function buildPublicFileUrl(filePath, bucket = 'documents') {
+  if (!filePath) return null;
 
-  const base = (process.env.SUPABASE_PUBLIC_URL || '').replace(/\/+$/, '');
-  const bucket = (process.env.SUPABASE_BUCKET || 'documents').replace(/^\/+|\/+$/g, '');
+  const base = (process.env.SUPABASE_URL || '').replace(/\/+$/, '');
+  const cleanPath = String(filePath).trim().replace(/^\/+/, '');
 
-  // نظّف path
-  const cleanPath = String(path).trim().replace(/^\/+/, '');
-
-  // مهم: encode لكل جزء لأن فيه مسافات/أحرف خاصة ممكن
   const encodedPath = cleanPath
     .split('/')
     .map(encodeURIComponent)

@@ -3,15 +3,37 @@ const supabase = require('../config/supabase');
 const { randomUUID } = require('crypto');
 const path = require('path');
 
-async function uploadToBucket(bucket, fileBuffer, originalName, prefix) {
+function guessContentType(originalName = '', mimetype = '') {
+  // إذا multer عطانا mimetype بنستخدمه
+  if (mimetype && typeof mimetype === 'string') return mimetype;
+
+  const ext = (path.extname(originalName) || '').toLowerCase();
+
+  if (ext === '.pdf') return 'application/pdf';
+  if (ext === '.png') return 'image/png';
+  if (ext === '.jpg' || ext === '.jpeg') return 'image/jpeg';
+  if (ext === '.webp') return 'image/webp';
+  if (ext === '.mp4') return 'video/mp4';
+  if (ext === '.mov') return 'video/quicktime';
+  if (ext === '.docx')
+    return 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
+
+  return 'application/octet-stream';
+}
+
+async function uploadToBucket(bucket, fileBuffer, originalName, prefix, mimetype) {
   const ext = path.extname(originalName) || '';
-  const fileName = `${prefix}_${randomUUID()}${ext}`;
+  const safePrefix = String(prefix || '').replace(/\/+$/g, ''); // شيل / بالنهاية لو موجود
+  const fileName = `${safePrefix}_${randomUUID()}${ext}`;
+
+  const contentType = guessContentType(originalName, mimetype);
 
   const { data, error } = await supabase.storage
     .from(bucket)
     .upload(fileName, fileBuffer, {
       cacheControl: '3600',
       upsert: false,
+      contentType, // ✅ هون أهم سطر
     });
 
   if (error) throw error;
@@ -23,14 +45,12 @@ async function uploadToBucket(bucket, fileBuffer, originalName, prefix) {
   return {
     path: data.path,
     url: publicData.publicUrl,
+    contentType,
   };
 }
 
 /**
- * لستة الملفات داخل فولدر معيّن (folder = prefix الأساسي)
- * مثال:
- *   bucket = 'listing-images'
- *   folder = 'dealer_XXX'
+ * list files from a folder
  */
 async function listFromBucket(bucket, folder) {
   const { data, error } = await supabase.storage
