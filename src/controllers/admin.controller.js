@@ -5,6 +5,7 @@ const {
   getUserDocumentsForAdmin,
   reviewDocument,
 } = require('../models/document.model');
+const { buildPublicFileUrl } = require('../utils/supabase');
 
 // قائمة العملاء (أصحاب المواقع/الحسابات)
 exports.getUsers = async (req, res) => {
@@ -90,9 +91,14 @@ exports.getUserDocuments = async (req, res) => {
     const { userId } = req.params;
     const docs = await getUserDocumentsForAdmin(userId);
 
+    const items = docs.map(doc => ({
+      ...doc,
+      file_public_url: buildPublicFileUrl(doc.file_url),
+    }));
+
     return res.json({
       success: true,
-      items: docs,
+      items,
     });
   } catch (err) {
     console.error('admin.getUserDocuments error:', err);
