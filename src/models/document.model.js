@@ -18,8 +18,8 @@ function mapDocRow(row) {
 // تستخدمها واجهة الحساب عند اليوزر نفسه
 async function createAccountDocument(userId, { document_type, file_url }) {
   const result = await db.query(
-    `INSERT INTO account_documents (user_id, document_type, file_url)
-     VALUES ($1, $2, $3)
+    `INSERT INTO account_documents (user_id, document_type, file_url, status)
+     VALUES ($1, $2, $3, 'pending')
      RETURNING *`,
     [userId, document_type, file_url]
   );

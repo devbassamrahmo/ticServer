@@ -5,9 +5,9 @@ const {
   setVerificationFlags,
 } = require('../models/user.model');
 const {
-  addUserDocument,
-  getUserDocuments,
-} = require('../models/userDocuments.model');
+  createAccountDocument,
+  getAccountDocumentsForUser,
+} = require('../models/document.model');
 const {
   listSubUsers,
   createSubUser,
@@ -25,7 +25,7 @@ exports.getProfile = async (req, res) => {
       return res.status(404).json({ success: false, message: 'المستخدم غير موجود' });
     }
 
-    const documents = await getUserDocuments(userId);
+    const documents = await getAccountDocumentsForUser(userId);
 
     return res.json({
       success: true,
@@ -108,7 +108,10 @@ exports.uploadDocument = async (req, res) => {
       });
     }
 
-    const doc = await addUserDocument(userId, document_type, file_url);
+    const doc = await createAccountDocument(userId, {
+      document_type,
+      file_url,
+    });
 
     return res.status(201).json({
       success: true,
