@@ -20,7 +20,8 @@ const siteRoutes = require('./routes/site.routes');
 const paymentRoutes = require('./routes/payment.routes');
 const nafathRoutes = require('./routes/nafath.routes');
 const contactFormRoutes = require('./routes/contactForm.routes');
-
+const publicCarsRoutes = require('./routes/public/cars.public.routes');
+const publicListingsRoutes = require('./routes/public/listings.public.routes');
 const app = express();
 
 app.use(helmet());
@@ -69,6 +70,7 @@ app.use('/api/site', siteRoutes);
 app.use('/api/payments', paymentRoutes);
 app.use('/api/auth/nafath', nafathRoutes);
 app.use('/api/contact-forms', contactFormRoutes);
-
+app.use('/public', publicCarsRoutes);
+app.use('/public', publicListingsRoutes);
 
 module.exports = app;
