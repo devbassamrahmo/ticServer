@@ -14,32 +14,13 @@ function normalizeFeatures(features) {
 // ==========================
 async function createCarListing({ dealer_id, site_id, data }) {
   const {
-    title,
-    description,
-    brand,
-    model,
-    trim,
-    year,
-    category,
-    condition,
-    mileage,
-    exterior_color,
-    interior_color,
-    price,
-    fuel_type,
-    transmission,
-    engine_size,
-    drive_type,
-    cylinders,
-    features,
-    images,
-    whatsapp_enabled,
-    phone_enabled,
-    importer,
-    engine_power_hp,
-    status,
-    is_published,
-    currency,
+    title, description, brand, model, trim, year, category,
+    condition, mileage, exterior_color, interior_color,
+    price, fuel_type, transmission, engine_size, drive_type, cylinders,
+    features, images,
+    whatsapp_enabled, phone_enabled,
+    importer, engine_power_hp,
+    status, is_published, currency,
   } = data;
 
   const normalizedFeatures = normalizeFeatures(features);
@@ -151,12 +132,8 @@ async function updateCarListing({ id, dealer_id, site_id, fields }) {
     'importer','engine_power_hp','status','is_published',
   ];
 
-  if (fields.features !== undefined) {
-    fields.features = JSON.stringify(normalizeFeatures(fields.features));
-  }
-  if (fields.images !== undefined) {
-    fields.images = JSON.stringify(normalizeArrayMax10(fields.images));
-  }
+  if (fields.features !== undefined) fields.features = JSON.stringify(normalizeFeatures(fields.features));
+  if (fields.images !== undefined) fields.images = JSON.stringify(normalizeArrayMax10(fields.images));
 
   const setParts = [];
   const params = [];
@@ -164,11 +141,8 @@ async function updateCarListing({ id, dealer_id, site_id, fields }) {
 
   for (const key of allowed) {
     if (fields[key] !== undefined) {
-      if (key === 'features' || key === 'images') {
-        setParts.push(`${key} = $${idx++}::jsonb`);
-      } else {
-        setParts.push(`${key} = $${idx++}`);
-      }
+      if (key === 'features' || key === 'images') setParts.push(`${key} = $${idx++}::jsonb`);
+      else setParts.push(`${key} = $${idx++}`);
       params.push(fields[key]);
     }
   }
@@ -200,6 +174,11 @@ async function deleteCarListing({ id, dealer_id, site_id }) {
 // ==========================
 // Public (By site_id)
 // ==========================
+function clampInt(v, def = null) {
+  const n = Number(v);
+  return Number.isFinite(n) ? n : def;
+}
+
 async function getFeaturedCarsForSite(site_id, { limit = 6 } = {}) {
   const res = await db.query(
     `SELECT c.*
@@ -239,12 +218,7 @@ async function searchPublicCarsForSite(site_id, { page = 1, pageSize = 12 } = {}
     [site_id]
   );
 
-  return {
-    items: listRes.rows,
-    total: Number(countRes.rows[0].total),
-    page: p,
-    pageSize: ps,
-  };
+  return { items: listRes.rows, total: Number(countRes.rows[0].total), page: p, pageSize: ps };
 }
 
 async function getPublicCarByIdForSite(site_id, carId) {
@@ -261,11 +235,6 @@ async function getPublicCarByIdForSite(site_id, carId) {
   return res.rows[0] || null;
 }
 
-function clampInt(v, def = null) {
-  const n = Number(v);
-  return Number.isFinite(n) ? n : def;
-}
-
 function buildCarsPublicWhere(site_id, filters = {}) {
   const conditions = [
     `c.site_id = $1`,
@@ -275,7 +244,6 @@ function buildCarsPublicWhere(site_id, filters = {}) {
   const params = [site_id];
   let idx = 2;
 
-  // fulltext-ish
   if (filters.search) {
     conditions.push(`(
       c.title ILIKE $${idx}
@@ -288,18 +256,19 @@ function buildCarsPublicWhere(site_id, filters = {}) {
     idx++;
   }
 
-  // exact-ish filters
   if (filters.brand) { conditions.push(`c.brand ILIKE $${idx}`); params.push(`%${filters.brand}%`); idx++; }
   if (filters.model) { conditions.push(`c.model ILIKE $${idx}`); params.push(`%${filters.model}%`); idx++; }
   if (filters.category) { conditions.push(`c.category ILIKE $${idx}`); params.push(`%${filters.category}%`); idx++; }
-  if (filters.condition) { conditions.push(`c.condition = $${idx}`); params.push(filters.condition); idx++; } // new/used
+
+  if (filters.condition) { conditions.push(`c.condition = $${idx}`); params.push(filters.condition); idx++; }
+
   if (filters.exterior_color) { conditions.push(`c.exterior_color ILIKE $${idx}`); params.push(`%${filters.exterior_color}%`); idx++; }
   if (filters.interior_color) { conditions.push(`c.interior_color ILIKE $${idx}`); params.push(`%${filters.interior_color}%`); idx++; }
+
   if (filters.fuel_type) { conditions.push(`c.fuel_type = $${idx}`); params.push(filters.fuel_type); idx++; }
   if (filters.transmission) { conditions.push(`c.transmission = $${idx}`); params.push(filters.transmission); idx++; }
   if (filters.drive_type) { conditions.push(`c.drive_type = $${idx}`); params.push(filters.drive_type); idx++; }
 
-  // ranges
   const minYear = clampInt(filters.minYear);
   const maxYear = clampInt(filters.maxYear);
   if (minYear != null) { conditions.push(`c.year >= $${idx}`); params.push(minYear); idx++; }
@@ -319,7 +288,6 @@ function buildCarsPublicWhere(site_id, filters = {}) {
 }
 
 function buildCarsSort(sort) {
-  // default newest
   switch (sort) {
     case 'price_asc': return `c.price ASC NULLS LAST, c.created_at DESC`;
     case 'price_desc': return `c.price DESC NULLS LAST, c.created_at DESC`;
@@ -353,18 +321,12 @@ async function searchPublicCarsForSiteAdvanced(site_id, filters = {}, pagination
     params
   );
 
-  return {
-    items: listRes.rows,
-    total: Number(countRes.rows[0].total),
-    page,
-    pageSize,
-  };
+  return { items: listRes.rows, total: Number(countRes.rows[0].total), page, pageSize };
 }
 
-// similar ads: same site + same brand/model (or brand only) + exclude current
 async function getSimilarPublicCarsForSite(site_id, carId, { limit = 6 } = {}) {
   const baseRes = await db.query(
-    `SELECT id, brand, model, category, year, price
+    `SELECT id, brand, model, price
      FROM car_listings
      WHERE id = $1 AND site_id = $2
        AND status = 'active' AND is_published = TRUE
@@ -375,11 +337,10 @@ async function getSimilarPublicCarsForSite(site_id, carId, { limit = 6 } = {}) {
   const base = baseRes.rows[0];
   if (!base) return [];
 
-  // أولوية: نفس brand+model، إذا model فاضي بيرجع brand بس
   const params = [site_id, carId];
   let idx = 3;
 
-  let conditions = [
+  const conditions = [
     `c.site_id = $1`,
     `c.id <> $2`,
     `c.status = 'active'`,
@@ -389,7 +350,6 @@ async function getSimilarPublicCarsForSite(site_id, carId, { limit = 6 } = {}) {
   if (base.brand) { conditions.push(`c.brand = $${idx}`); params.push(base.brand); idx++; }
   if (base.model) { conditions.push(`c.model = $${idx}`); params.push(base.model); idx++; }
 
-  // خيار: قرب السعر (±20%) إذا في price
   if (base.price != null) {
     conditions.push(`(c.price BETWEEN $${idx} AND $${idx + 1})`);
     params.push(Math.floor(base.price * 0.8), Math.ceil(base.price * 1.2));
@@ -422,7 +382,6 @@ module.exports = {
   getFeaturedCarsForSite,
   searchPublicCarsForSite,
   getPublicCarByIdForSite,
-
   searchPublicCarsForSiteAdvanced,
   getSimilarPublicCarsForSite,
 };

@@ -8,20 +8,24 @@ const { authRequired } = require('../middleware/auth');
 router.get('/public/:slug', siteController.getPublicSiteConfig);
 router.get('/check-slug', siteController.checkSlug);
 
-// Realestate public listings for a site
+// Realestate public
 router.get('/public/:slug/listings/featured', siteController.getFeaturedRealestateForSite);
 router.get('/public/:slug/listings/search', siteController.searchRealestateForSite);
 router.get('/public/:slug/listings/:listingId', siteController.getRealestateDetailsForSite);
-router.get('/public/:slug/properties/:id', siteController.getPropertyDetailsForSite);
-router.get('/public/:slug/projects/:id', siteController.getProjectDetailsForSite);
 
-// Cars public endpoints for a site
+// Cars public
 router.get('/public/:slug/cars/featured', siteController.getFeaturedCarsForPublicSite);
 router.get('/public/:slug/cars', siteController.searchCarsForSite);
 router.get('/public/:slug/cars/:carId', siteController.getCarDetailsForSite);
 
 // ===== PRIVATE =====
 router.use(authRequired);
+
+// Analytics (Dashboard)
+router.get('/analytics/realestate/properties/:id', siteController.getPropertyAnalytics);
+router.get('/analytics/realestate/projects/:id', siteController.getProjectAnalytics);
+// اختياري إذا عندك car_events
+router.get('/analytics/cars/:id', siteController.getCarAnalytics);
 
 router.get('/', siteController.getMySite);                // ?sector=cars|realestate
 router.post('/', siteController.upsertMySite);            // upsert full
