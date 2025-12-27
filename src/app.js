@@ -20,7 +20,10 @@ const siteRoutes = require('./routes/site.routes');
 const paymentRoutes = require('./routes/payment.routes');
 const nafathRoutes = require('./routes/nafath.routes');
 const contactFormRoutes = require('./routes/contactForm.routes');
+const errorHandler = require('./middleware/errorHandler');
+
 const app = express();
+app.use(errorHandler);
 
 app.use(helmet());
 const allowedOrigins = [
