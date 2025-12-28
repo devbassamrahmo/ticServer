@@ -3,6 +3,7 @@ const express = require('express');
 const router = express.Router();
 const siteController = require('../controllers/site.controller');
 const { authRequired } = require('../middleware/auth');
+const reportController = require('../controllers/report.controller');
 
 // ===== PUBLIC =====
 router.get('/public/:slug', siteController.getPublicSiteConfig);
@@ -25,6 +26,12 @@ router.get('/public/:slug/cars/:carId/similar', siteController.getSimilarCars);
 
 // Listings similar (property/project)
 router.get('/public/:slug/listings/:listingId/similar', siteController.getSimilarListings);
+
+// report car
+router.post('/public/:slug/cars/:carId/report', express.json(), reportController.reportCar);
+
+// report listing (property/project)
+router.post('/public/:slug/listings/:listingId/report', express.json(), reportController.reportListing);
 
 // ===== PRIVATE =====
 router.use(authRequired);

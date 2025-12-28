@@ -39,9 +39,12 @@ exports.getMyCars = async (req, res) => {
       return res.status(400).json({ success: false, message: 'لا يوجد موقع سيارات لهذا الحساب' });
     }
 
+      const q = req.query.q || req.query.search || null;
+
     const data = await getCarsForSite({
       dealer_id,
       site_id,
+      q,
       page: Number(req.query.page || 1),
       pageSize: Number(req.query.pageSize || 10),
     });

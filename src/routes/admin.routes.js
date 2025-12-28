@@ -24,4 +24,8 @@ router.get('/users/:userId/documents', adminController.getUserDocuments);
 // POST /api/admin/documents/:documentId/review
 router.post('/documents/:documentId/review', adminController.reviewDocument);
 
+// البلاغات
+router.get('/reports', adminController.getReports);
+router.patch('/reports/:reportId/close', express.json(), adminController.closeReport);
+router.delete('/reports/:reportId/delete-ad', adminController.deleteAdFromReport);
 module.exports = router;

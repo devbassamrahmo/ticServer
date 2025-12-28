@@ -6,6 +6,7 @@ const {
   reviewDocument,
 } = require('../models/document.model');
 const { buildPublicFileUrl } = require('../utils/supabase');
+const { listReportsForAdmin, closeReport } = require('../models/report.model');
 
 // قائمة العملاء (أصحاب المواقع/الحسابات)
 exports.getUsers = async (req, res) => {
@@ -145,5 +146,74 @@ console.log('public_url:', buildPublicFileUrl(doc.file_url));
   } catch (err) {
     console.error('admin.reviewDocument error:', err);
     return res.status(500).json({ success: false, message: 'خطأ في السيرفر' });
+  }
+};
+
+// GET /api/admin/reports?status=open|closed&sector=cars|realestate&q=&page=&pageSize=
+exports.getReports = async (req, res) => {
+  try {
+    const { status, sector, q, page = 1, pageSize = 20 } = req.query;
+
+    const result = await listReportsForAdmin({
+      status,
+      sector,
+      q,
+      page: Number(page),
+      pageSize: Number(pageSize),
+    });
+
+    return res.json({ success:true, ...result });
+  } catch (err) {
+    console.error('admin.getReports error:', err);
+    return res.status(500).json({ success:false, message:'خطأ في السيرفر' });
+  }
+};
+
+// PATCH /api/admin/reports/:reportId/close
+exports.closeReport = async (req, res) => {
+  try {
+    const { reportId } = req.params;
+    const adminId = req.user.id;
+
+    const updated = await closeReport(reportId, adminId);
+    if (!updated) return res.status(404).json({ success:false, message:'البلاغ غير موجود' });
+
+    return res.json({ success:true, report: updated });
+  } catch (err) {
+    console.error('admin.closeReport error:', err);
+    return res.status(500).json({ success:false, message:'خطأ في السيرفر' });
+  }
+};
+
+// DELETE /api/admin/reports/:reportId/delete-ad
+// يحذف الإعلان + يسكر البلاغات المرتبطة
+exports.deleteAdFromReport = async (req, res) => {
+  try {
+    const { reportId } = req.params;
+    const adminId = req.user.id;
+
+    const rRes = await db.query(`SELECT * FROM reports WHERE id = $1 LIMIT 1`, [reportId]);
+    const report = rRes.rows[0];
+    if (!report) return res.status(404).json({ success:false, message:'البلاغ غير موجود' });
+
+    // حذف حسب النوع
+    if (report.target_type === 'car') {
+      await db.query(`DELETE FROM car_listings WHERE id = $1`, [report.target_id]);
+    } else {
+      await db.query(`DELETE FROM listings WHERE id = $1`, [report.target_id]);
+    }
+
+    // سكر كل البلاغات المفتوحة لنفس الإعلان
+    await db.query(
+      `UPDATE reports
+       SET status='closed', closed_by=$2, closed_at=NOW()
+       WHERE target_type=$1 AND target_id=$3 AND status='open'`,
+      [report.target_type, adminId, report.target_id]
+    );
+
+    return res.json({ success:true });
+  } catch (err) {
+    console.error('admin.deleteAdFromReport error:', err);
+    return res.status(500).json({ success:false, message:'خطأ في السيرفر' });
   }
 };

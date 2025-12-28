@@ -1,0 +1,134 @@
+// src/models/report.model.js
+const db = require('../config/db');
+
+function mapReportRow(r) {
+  return {
+    id: r.id,
+    site_id: r.site_id,
+    owner_id: r.owner_id,
+    target_type: r.target_type,
+    target_id: r.target_id,
+    message: r.message,
+    reporter_name: r.reporter_name,
+    reporter_email: r.reporter_email,
+    reporter_phone: r.reporter_phone,
+    reporter_ip: r.reporter_ip,
+    user_agent: r.user_agent,
+    status: r.status,
+    closed_by: r.closed_by,
+    closed_at: r.closed_at,
+    created_at: r.created_at,
+  };
+}
+
+async function createReport({
+  site_id,
+  owner_id,
+  target_type,
+  target_id,
+  message,
+  reporter_name,
+  reporter_email,
+  reporter_phone,
+  reporter_ip,
+  user_agent,
+}) {
+  const res = await db.query(
+    `INSERT INTO reports (
+      site_id, owner_id, target_type, target_id,
+      message, reporter_name, reporter_email, reporter_phone,
+      reporter_ip, user_agent
+    )
+    VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)
+    RETURNING *`,
+    [
+      site_id,
+      owner_id,
+      target_type,
+      target_id,
+      message,
+      reporter_name || null,
+      reporter_email || null,
+      reporter_phone || null,
+      reporter_ip || null,
+      user_agent || null,
+    ]
+  );
+
+  return mapReportRow(res.rows[0]);
+}
+
+async function listReportsForAdmin({ status, sector, q, page = 1, pageSize = 20 }) {
+  const where = [];
+  const params = [];
+  let idx = 1;
+
+  if (status) {
+    where.push(`r.status = $${idx++}`);
+    params.push(status);
+  }
+
+  if (sector) {
+    where.push(`s.sector = $${idx++}`);
+    params.push(sector);
+  }
+
+  if (q) {
+    where.push(`(
+      r.message ILIKE $${idx}
+      OR r.reporter_name ILIKE $${idx}
+      OR r.reporter_phone ILIKE $${idx}
+      OR s.slug ILIKE $${idx}
+    )`);
+    params.push(`%${q}%`);
+    idx++;
+  }
+
+  const whereClause = where.length ? `WHERE ${where.join(' AND ')}` : '';
+  const offset = (page - 1) * pageSize;
+
+  const listRes = await db.query(
+    `SELECT
+      r.*,
+      s.slug,
+      s.sector
+     FROM reports r
+     JOIN sites s ON s.id = r.site_id
+     ${whereClause}
+     ORDER BY r.created_at DESC
+     LIMIT ${pageSize} OFFSET ${offset}`,
+    params
+  );
+
+  const countRes = await db.query(
+    `SELECT COUNT(*) AS total
+     FROM reports r
+     JOIN sites s ON s.id = r.site_id
+     ${whereClause}`,
+    params
+  );
+
+  return {
+    items: listRes.rows.map(mapReportRow),
+    total: Number(countRes.rows[0].total),
+    page,
+    pageSize,
+  };
+}
+
+async function closeReport(reportId, adminId) {
+  const res = await db.query(
+    `UPDATE reports
+     SET status = 'closed', closed_by = $2, closed_at = NOW()
+     WHERE id = $1
+     RETURNING *`,
+    [reportId, adminId]
+  );
+  return res.rows[0] ? mapReportRow(res.rows[0]) : null;
+}
+
+module.exports = {
+  createReport,
+  listReportsForAdmin,
+  closeReport,
+};

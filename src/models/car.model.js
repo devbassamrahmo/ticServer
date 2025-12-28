@@ -104,23 +104,40 @@ async function createCarListing({ dealer_id, site_id, data }) {
   return result.rows[0];
 }
 
-async function getCarsForSite({ dealer_id, site_id, page = 1, pageSize = 10 }) {
+async function getCarsForSite({ dealer_id, site_id, page = 1, pageSize = 10, q }) {
   const offset = (page - 1) * pageSize;
+
+  const where = [`c.dealer_id = $1`, `c.site_id = $2`];
+  const params = [dealer_id, site_id];
+  let idx = 3;
+
+  if (q) {
+    where.push(`(
+      c.title ILIKE $${idx}
+      OR c.brand ILIKE $${idx}
+      OR c.model ILIKE $${idx}
+      OR c.trim ILIKE $${idx}
+    )`);
+    params.push(`%${q}%`);
+    idx++;
+  }
+
+  const whereClause = `WHERE ${where.join(' AND ')}`;
 
   const listRes = await db.query(
     `SELECT c.*
      FROM car_listings c
-     WHERE c.dealer_id = $1 AND c.site_id = $2
+     ${whereClause}
      ORDER BY c.created_at DESC
-     LIMIT $3 OFFSET $4`,
-    [dealer_id, site_id, pageSize, offset]
+     LIMIT $${idx++} OFFSET $${idx++}`,
+    [...params, pageSize, offset]
   );
 
   const countRes = await db.query(
     `SELECT COUNT(*) AS total
-     FROM car_listings
-     WHERE dealer_id = $1 AND site_id = $2`,
-    [dealer_id, site_id]
+     FROM car_listings c
+     ${whereClause}`,
+    params
   );
 
   return {
@@ -130,6 +147,7 @@ async function getCarsForSite({ dealer_id, site_id, page = 1, pageSize = 10 }) {
     pageSize,
   };
 }
+
 
 async function getCarById({ id, dealer_id, site_id }) {
   const result = await db.query(

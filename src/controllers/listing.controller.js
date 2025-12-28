@@ -73,17 +73,17 @@ async function listProperties(req, res) {
     const dealer_id = req.user.id;
     const site = await requireRealestateSiteOrThrow(dealer_id);
 
-    const { status, search, city, page = 1, pageSize = 10 } = req.query;
+    const { status, search, q, city, page = 1, pageSize = 10 } = req.query;
 
-    const result = await getPropertiesForDealer({
-      dealer_id,
-      site_id: site.id,
-      status,
-      search,
-      city,
-      page: Number(page),
-      pageSize: Number(pageSize),
-    });
+const result = await getPropertiesForDealer({
+  dealer_id,
+  site_id: site.id,
+  status,
+  search: search || q,
+  city,
+  page: Number(page),
+  pageSize: Number(pageSize),
+});
 
     return res.json({ success: true, ...result });
   } catch (err) {
@@ -248,17 +248,17 @@ async function listProjects(req, res) {
     const dealer_id = req.user.id;
     const site = await requireRealestateSiteOrThrow(dealer_id);
 
-    const { status, search, city, page = 1, pageSize = 10 } = req.query;
+const { status, search, q, city, page = 1, pageSize = 10 } = req.query;
 
     const result = await getProjectsForDealer({
-      dealer_id,
-      site_id: site.id,
-      status,
-      search,
-      city,
-      page: Number(page),
-      pageSize: Number(pageSize),
-    });
+  dealer_id,
+  site_id: site.id,
+  status,
+  search: search || q,
+  city,
+  page: Number(page),
+  pageSize: Number(pageSize),
+});
 
     return res.json({ success: true, ...result });
   } catch (err) {
