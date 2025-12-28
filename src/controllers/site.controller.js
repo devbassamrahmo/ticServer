@@ -1,8 +1,4 @@
 // src/controllers/site.controller.js
-
-const db = require('../config/db');
-
-
 const {
   getSiteByOwner,
   getSiteBySlug,
@@ -20,14 +16,14 @@ const {
   getFeaturedListingsForSite,
   searchPublicListingsForSite,
   getPublicListingByIdForSite,
-  getSimilarPublicListingsForSite,
+  getSimilarListingForSite,
 } = require('../models/listing.model');
 
 const {
   getFeaturedCarsForSite,
-  searchPublicCarsForSiteAdvanced,
+  searchPublicCarsForSite,
   getPublicCarByIdForSite,
-  getSimilarPublicCarsForSite,
+  getSimilarCarsForSite,
 } = require('../models/car.model');
 
 const { completeStep } = require('../models/onboarding.model');
@@ -63,10 +59,6 @@ async function loadCarsSiteOr404(slug, res) {
   return site;
 }
 
-// ==========================
-// PRIVATE (Dashboard)
-// ==========================
-
 // GET /api/site?sector=cars|realestate
 async function getMySite(req, res) {
   try {
@@ -85,8 +77,16 @@ async function upsertMySite(req, res) {
   try {
     const ownerId = req.user.id;
     const {
-      sector, slug, name, template_key,
-      colors, fonts, branding, social, location, about,
+      sector,
+      slug,
+      name,
+      template_key,
+      colors,
+      fonts,
+      branding,
+      social,
+      location,
+      about,
       is_published,
     } = req.body;
 
@@ -94,33 +94,180 @@ async function upsertMySite(req, res) {
       return res.status(400).json({ success: false, message: 'sector و slug و template_key مطلوبة' });
     }
 
-    const site = await upsertSiteForOwner(ownerId, {
-      sector,
-      slug,
-      name,
-      template_key,
-      theme: buildTheme(colors, fonts),
-      settings: buildSettings(branding, social, location, about),
-      is_published,
-    });
-
     try {
-      await completeStep(ownerId, 'site_setup');
-      if (is_published) await completeStep(ownerId, 'publish_site');
-    } catch (e) {
-      console.error('completeStep error:', e.message);
-    }
+      const site = await upsertSiteForOwner(ownerId, {
+        sector,
+        slug,
+        name,
+        template_key,
+        theme: buildTheme(colors, fonts),
+        settings: buildSettings(branding, social, location, about),
+        is_published,
+      });
 
+      try {
+        await completeStep(ownerId, 'site_setup');
+        if (is_published) await completeStep(ownerId, 'publish_site');
+      } catch (e) {
+        console.error('completeStep error:', e.message);
+      }
+
+      return res.json({ success: true, site });
+    } catch (err) {
+      if (err.message === 'INVALID_TEMPLATE') {
+        return res.status(400).json({ success: false, message: 'template_key غير صالح' });
+      }
+      if (err.code === '23505') {
+        return res.status(400).json({ success: false, message: 'هذا الرابط مستخدم لموقع آخر، اختر slug آخر' });
+      }
+      console.error('upsertMySite error:', err);
+      return res.status(500).json({ success: false, message: 'خطأ في السيرفر' });
+    }
+  } catch (err) {
+    console.error('upsertMySite outer error:', err);
+    return res.status(500).json({ success: false, message: 'خطأ في السيرفر' });
+  }
+}
+
+// GET /api/site/public/:slug
+async function getPublicSiteConfig(req, res) {
+  try {
+    const { slug } = req.params;
+    const site = await getSiteConfigBySlug(slug, { requirePublished: true });
+    if (!site) return res.status(404).json({ success:false, message:'الموقع غير موجود أو غير منشور' });
     return res.json({ success: true, site });
   } catch (err) {
-    if (err.message === 'INVALID_TEMPLATE') {
-      return res.status(400).json({ success: false, message: 'template_key غير صالح' });
+    console.error('getPublicSiteConfig error:', err);
+    return res.status(500).json({ success:false, message:'خطأ في السيرفر' });
+  }
+}
+
+// GET /api/site/check-slug?slug=xxx
+async function checkSlug(req, res) {
+  try {
+    const { slug } = req.query;
+    if (!slug || typeof slug !== 'string' || slug.length < 3) {
+      return res.status(400).json({ success: false, message: 'slug غير صالح (3 أحرف على الأقل)' });
     }
-    if (err.code === '23505') {
-      return res.status(400).json({ success: false, message: 'هذا الرابط مستخدم لموقع آخر، اختر slug آخر' });
-    }
-    console.error('upsertMySite error:', err);
+    const site = await getSiteBySlug(slug);
+    return res.json({ success: true, slug, available: !site });
+  } catch (err) {
+    console.error('checkSlug error:', err);
     return res.status(500).json({ success: false, message: 'خطأ في السيرفر' });
+  }
+}
+
+// ===== REAL ESTATE PUBLIC (by site_id) =====
+
+// GET /api/site/public/:slug/listings/featured?limit=6
+async function getFeaturedRealestateForSite(req, res) {
+  try {
+    const { slug } = req.params;
+    const { limit } = req.query;
+
+    const site = await loadRealEstateSiteOr404(slug, res);
+    if (!site) return;
+
+    const items = await getFeaturedListingsForSite(site.id, { limit: limit ? Number(limit) : 6 });
+    return res.json({ success: true, items });
+  } catch (err) {
+    console.error('getFeaturedRealestateForSite error:', err);
+    return res.status(500).json({ success: false, message: 'خطأ في السيرفر' });
+  }
+}
+
+// GET /api/site/public/:slug/listings/search?page=1&pageSize=12
+async function searchRealestateForSite(req, res) {
+  try {
+    const { slug } = req.params;
+
+    const site = await loadRealEstateSiteOr404(slug, res);
+    if (!site) return;
+
+    const result = await searchPublicListingsForSite(site.id, req.query, {
+      page: req.query.page,
+      pageSize: req.query.pageSize,
+    });
+
+    return res.json({ success: true, ...result });
+  } catch (err) {
+    console.error('searchRealestateForSite error:', err);
+    return res.status(500).json({ success: false, message: 'خطأ في السيرفر' });
+  }
+}
+
+// GET /api/site/public/:slug/listings/:listingId
+async function getRealestateDetailsForSite(req, res) {
+  try {
+    const { slug, listingId } = req.params;
+
+    const site = await loadRealEstateSiteOr404(slug, res);
+    if (!site) return;
+
+    const listing = await getPublicListingByIdForSite(site.id, listingId);
+    if (!listing) return res.status(404).json({ success:false, message:'العقار غير موجود' });
+
+    return res.json({ success: true, listing });
+  } catch (err) {
+    console.error('getRealestateDetailsForSite error:', err);
+    return res.status(500).json({ success:false, message:'خطأ في السيرفر' });
+  }
+}
+
+// ===== CARS PUBLIC (by site_id) =====
+
+// GET /api/site/public/:slug/cars/featured?limit=6
+async function getFeaturedCarsForPublicSite(req, res) {
+  try {
+    const { slug } = req.params;
+    const { limit } = req.query;
+
+    const site = await loadCarsSiteOr404(slug, res);
+    if (!site) return;
+
+    const items = await getFeaturedCarsForSite(site.id, { limit: limit ? Number(limit) : 6 });
+    return res.json({ success:true, items });
+  } catch (err) {
+    console.error('getFeaturedCarsForPublicSite error:', err);
+    return res.status(500).json({ success:false, message:'خطأ في السيرفر' });
+  }
+}
+
+// GET /api/site/public/:slug/cars?page=1&pageSize=12
+async function searchCarsForSite(req, res) {
+  try {
+    const { slug } = req.params;
+
+    const site = await loadCarsSiteOr404(slug, res);
+    if (!site) return;
+
+    const result = await searchPublicCarsForSite(site.id, req.query, {
+      page: req.query.page,
+      pageSize: req.query.pageSize,
+    });
+
+    return res.json({ success:true, ...result });
+  } catch (err) {
+    console.error('searchCarsForSite error:', err);
+    return res.status(500).json({ success:false, message:'خطأ في السيرفر' });
+  }
+}
+
+// GET /api/site/public/:slug/cars/:carId
+async function getCarDetailsForSite(req, res) {
+  try {
+    const { slug, carId } = req.params;
+
+    const site = await loadCarsSiteOr404(slug, res);
+    if (!site) return;
+
+    const car = await getPublicCarByIdForSite(site.id, carId);
+    if (!car) return res.status(404).json({ success:false, message:'السيارة غير موجودة' });
+
+    return res.json({ success:true, car });
+  } catch (err) {
+    console.error('getCarDetailsForSite error:', err);
+    return res.status(500).json({ success:false, message:'خطأ في السيرفر' });
   }
 }
 
@@ -161,6 +308,7 @@ async function updateMySiteTheme(req, res) {
 async function updateMySiteSettings(req, res) {
   try {
     const ownerId = req.user.id;
+
     const { sector, slug, name, branding, social, location, about } = req.body;
     if (!sector) return res.status(400).json({ success:false, message:'sector مطلوب' });
     if (!slug)   return res.status(400).json({ success:false, message:'slug مطلوب' });
@@ -244,279 +392,114 @@ async function setTemplateStep(req, res) {
   }
 }
 
-// ==========================
-// PUBLIC (Visitors)
-// ==========================
-
-// GET /api/site/public/:slug
-async function getPublicSiteConfig(req, res) {
+async function getPropertyDetailsForSite(req, res) {
   try {
-    const { slug } = req.params;
-    const site = await getSiteConfigBySlug(slug, { requirePublished: true });
-    if (!site) return res.status(404).json({ success:false, message:'الموقع غير موجود أو غير منشور' });
-    return res.json({ success: true, site });
-  } catch (err) {
-    console.error('getPublicSiteConfig error:', err);
-    return res.status(500).json({ success:false, message:'خطأ في السيرفر' });
-  }
-}
-
-// GET /api/site/check-slug?slug=xxx
-async function checkSlug(req, res) {
-  try {
-    const { slug } = req.query;
-    if (!slug || typeof slug !== 'string' || slug.length < 3) {
-      return res.status(400).json({ success: false, message: 'slug غير صالح (3 أحرف على الأقل)' });
-    }
-    const site = await getSiteBySlug(slug);
-    return res.json({ success: true, slug, available: !site });
-  } catch (err) {
-    console.error('checkSlug error:', err);
-    return res.status(500).json({ success: false, message: 'خطأ في السيرفر' });
-  }
-}
-
-// ===== REAL ESTATE PUBLIC =====
-
-// GET /api/site/public/:slug/listings/featured?limit=6
-async function getFeaturedRealestateForSite(req, res) {
-  try {
-    const { slug } = req.params;
-    const { limit } = req.query;
+    const { slug, id } = req.params;
 
     const site = await loadRealEstateSiteOr404(slug, res);
     if (!site) return;
-
-    const items = await getFeaturedListingsForSite(site.id, { limit: limit ? Number(limit) : 6 });
-    return res.json({ success: true, items });
-  } catch (err) {
-    console.error('getFeaturedRealestateForSite error:', err);
-    return res.status(500).json({ success: false, message: 'خطأ في السيرفر' });
-  }
-}
-
-// GET /api/site/public/:slug/listings/search?... (advanced)
-async function searchRealestateForSite(req, res) {
-  try {
-    const { slug } = req.params;
-
-    const site = await loadRealEstateSiteOr404(slug, res);
-    if (!site) return;
-
-    const result = await searchPublicListingsForSite(site.id, req.query, {
-      page: req.query.page,
-      pageSize: req.query.pageSize,
-    });
-
-    return res.json({ success: true, ...result });
-  } catch (err) {
-    console.error('searchRealestateForSite error:', err);
-    return res.status(500).json({ success: false, message: 'خطأ في السيرفر' });
-  }
-}
-
-// GET /api/site/public/:slug/listings/:listingId  (details + similar)
-async function getRealestateDetailsForSite(req, res) {
-  try {
-    const { slug, listingId } = req.params;
-
-    const site = await loadRealEstateSiteOr404(slug, res);
-    if (!site) return;
-
-    const listing = await getPublicListingByIdForSite(site.id, listingId);
-    if (!listing) return res.status(404).json({ success:false, message:'العقار غير موجود' });
-
-    const similar = await getSimilarPublicListingsForSite(site.id, listingId, { limit: 6 });
-    return res.json({ success: true, listing, similar });
-  } catch (err) {
-    console.error('getRealestateDetailsForSite error:', err);
-    return res.status(500).json({ success:false, message:'خطأ في السيرفر' });
-  }
-}
-
-// ===== CARS PUBLIC =====
-
-// GET /api/site/public/:slug/cars/featured?limit=6
-async function getFeaturedCarsForPublicSite(req, res) {
-  try {
-    const { slug } = req.params;
-    const { limit } = req.query;
-
-    const site = await loadCarsSiteOr404(slug, res);
-    if (!site) return;
-
-    const items = await getFeaturedCarsForSite(site.id, { limit: limit ? Number(limit) : 6 });
-    return res.json({ success:true, items });
-  } catch (err) {
-    console.error('getFeaturedCarsForPublicSite error:', err);
-    return res.status(500).json({ success:false, message:'خطأ في السيرفر' });
-  }
-}
-
-// GET /api/site/public/:slug/cars?... (advanced without changing URL)
-async function searchCarsForSite(req, res) {
-  try {
-    const { slug } = req.params;
-
-    const site = await loadCarsSiteOr404(slug, res);
-    if (!site) return;
-
-    const result = await searchPublicCarsForSiteAdvanced(site.id, req.query, {
-      page: req.query.page,
-      pageSize: req.query.pageSize,
-    });
-
-    return res.json({ success:true, ...result });
-  } catch (err) {
-    console.error('searchCarsForSite error:', err);
-    return res.status(500).json({ success:false, message:'خطأ في السيرفر' });
-  }
-}
-
-// GET /api/site/public/:slug/cars/:carId (details + similar)
-async function getCarDetailsForSite(req, res) {
-  try {
-    const { slug, carId } = req.params;
-
-    const site = await loadCarsSiteOr404(slug, res);
-    if (!site) return;
-
-    const car = await getPublicCarByIdForSite(site.id, carId);
-    if (!car) return res.status(404).json({ success:false, message:'السيارة غير موجودة' });
-
-    const similar = await getSimilarPublicCarsForSite(site.id, carId, { limit: 6 });
-    return res.json({ success:true, car, similar });
-  } catch (err) {
-    console.error('getCarDetailsForSite error:', err);
-    return res.status(500).json({ success:false, message:'خطأ في السيرفر' });
-  }
-}
-
-async function getPropertyAnalytics(req, res) {
-  try {
-    const ownerId = req.user.id;
-    const { id } = req.params;
-
-    // لازم يكون عنده موقع realestate
-    const site = await getSiteByOwner(ownerId, 'realestate');
-    if (!site) return res.status(400).json({ success:false, message:'لا يوجد موقع عقاري لهذا الحساب' });
 
     const { rows } = await db.query(
       `SELECT
-         l.id,
-         l.title,
-         l.type,
-         l.status,
-         l.is_published,
-         COALESCE(SUM(CASE WHEN e.event_type = 'view' THEN 1 ELSE 0 END), 0) AS views,
-         COALESCE(SUM(CASE WHEN e.event_type IN ('whatsapp_click','call_click') THEN 1 ELSE 0 END), 0) AS contacts
+         l.*,
+         COALESCE(SUM(CASE WHEN e.event_type = 'view' THEN 1 END), 0) AS views,
+         COALESCE(SUM(CASE WHEN e.event_type IN ('whatsapp_click','call_click') THEN 1 END), 0) AS contacts
        FROM listings l
        LEFT JOIN listing_events e ON e.listing_id = l.id
        WHERE l.id = $1
-         AND l.site_id = $2
-         AND l.dealer_id = $3
+         AND l.dealer_id = $2
+         AND l.status = 'active'
          AND l.type = 'property'
        GROUP BY l.id
        LIMIT 1`,
-      [id, site.id, ownerId]
+      [id, site.owner_id]
     );
 
-    const item = rows[0];
-    if (!item) return res.status(404).json({ success:false, message:'العقار غير موجود' });
+    const listing = rows[0];
+    if (!listing) {
+      return res.status(404).json({ success: false, message: 'العقار غير موجود' });
+    }
 
-    return res.json({ success:true, analytics: item });
+    return res.json({ success: true, property: listing });
   } catch (err) {
-    console.error('getPropertyAnalytics error:', err);
-    return res.status(500).json({ success:false, message:'خطأ في السيرفر' });
+    console.error('getPropertyDetailsForSite error:', err);
+    return res.status(500).json({ success: false, message: 'خطأ في السيرفر' });
   }
-}
+};
 
-async function getProjectAnalytics(req, res) {
+async function getProjectDetailsForSite(req, res) {
   try {
-    const ownerId = req.user.id;
-    const { id } = req.params;
+    const { slug, id } = req.params;
 
-    const site = await getSiteByOwner(ownerId, 'realestate');
-    if (!site) return res.status(400).json({ success:false, message:'لا يوجد موقع عقاري لهذا الحساب' });
+    const site = await loadRealEstateSiteOr404(slug, res);
+    if (!site) return;
 
     const { rows } = await db.query(
       `SELECT
-         l.id,
-         l.title,
-         l.type,
-         l.status,
-         l.is_published,
-         COALESCE(SUM(CASE WHEN e.event_type = 'view' THEN 1 ELSE 0 END), 0) AS views,
-         COALESCE(SUM(CASE WHEN e.event_type IN ('whatsapp_click','call_click') THEN 1 ELSE 0 END), 0) AS contacts
+         l.*,
+         COALESCE(SUM(CASE WHEN e.event_type = 'view' THEN 1 END), 0) AS views,
+         COALESCE(SUM(CASE WHEN e.event_type IN ('whatsapp_click','call_click') THEN 1 END), 0) AS contacts
        FROM listings l
        LEFT JOIN listing_events e ON e.listing_id = l.id
        WHERE l.id = $1
-         AND l.site_id = $2
-         AND l.dealer_id = $3
+         AND l.dealer_id = $2
+         AND l.status = 'active'
          AND l.type = 'project'
        GROUP BY l.id
        LIMIT 1`,
-      [id, site.id, ownerId]
+      [id, site.owner_id]
     );
 
-    const item = rows[0];
-    if (!item) return res.status(404).json({ success:false, message:'المشروع غير موجود' });
+    const listing = rows[0];
+    if (!listing) {
+      return res.status(404).json({ success: false, message: 'المشروع غير موجود' });
+    }
 
-    return res.json({ success:true, analytics: item });
+    return res.json({ success: true, project: listing });
   } catch (err) {
-    console.error('getProjectAnalytics error:', err);
-    return res.status(500).json({ success:false, message:'خطأ في السيرفر' });
+    console.error('getProjectDetailsForSite error:', err);
+    return res.status(500).json({ success: false, message: 'خطأ في السيرفر' });
   }
-}
+};
 
-async function getCarAnalytics(req, res) {
+// GET /api/site/public/:slug/cars/:carId/similar?limit=4
+async function getSimilarCars(req, res) {
   try {
-    const ownerId = req.user.id;
-    const { id } = req.params;
+    const { slug, carId } = req.params;
+    const { limit } = req.query;
 
-    const site = await getSiteByOwner(ownerId, 'cars');
-    if (!site) return res.status(400).json({ success:false, message:'لا يوجد موقع سيارات لهذا الحساب' });
+    const site = await loadCarsSiteOr404(slug, res);
+    if (!site) return;
 
-    const { rows } = await db.query(
-      `SELECT
-         c.id,
-         c.title,
-         c.status,
-         c.is_published,
-         COALESCE(SUM(CASE WHEN e.event_type = 'view' THEN 1 ELSE 0 END), 0) AS views,
-         COALESCE(SUM(CASE WHEN e.event_type IN ('whatsapp_click','call_click') THEN 1 ELSE 0 END), 0) AS contacts
-       FROM car_listings c
-       LEFT JOIN car_events e ON e.car_id = c.id
-       WHERE c.id = $1
-         AND c.site_id = $2
-         AND c.dealer_id = $3
-       GROUP BY c.id
-       LIMIT 1`,
-      [id, site.id, ownerId]
-    );
-
-    const item = rows[0];
-    if (!item) return res.status(404).json({ success:false, message:'السيارة غير موجودة' });
-
-    return res.json({ success:true, analytics: item });
+    const items = await getSimilarCarsForSite(site.id, carId, { limit: limit ? Number(limit) : 4 });
+    return res.json({ success: true, items });
   } catch (err) {
-    console.error('getCarAnalytics error:', err);
+    console.error('getSimilarCars error:', err);
     return res.status(500).json({ success:false, message:'خطأ في السيرفر' });
   }
 }
+
+// GET /api/site/public/:slug/listings/:listingId/similar?limit=4
+async function getSimilarListings(req, res) {
+  try {
+    const { slug, listingId } = req.params;
+    const { limit } = req.query;
+
+    const site = await loadRealEstateSiteOr404(slug, res);
+    if (!site) return;
+
+    const items = await getSimilarListingForSite(site.id, listingId, { limit: limit ? Number(limit) : 4 });
+    return res.json({ success: true, items });
+  } catch (err) {
+    console.error('getSimilarListings error:', err);
+    return res.status(500).json({ success:false, message:'خطأ في السيرفر' });
+  }
+}
+
 
 module.exports = {
-  // private
   getMySite,
   upsertMySite,
-  setTemplateStep,
-  updateMySiteBasic,
-  updateMySiteTheme,
-  updateMySiteSettings,
-  setPublishState,
-  updateMySiteAll,
-
-  // public core
   getPublicSiteConfig,
   checkSlug,
 
@@ -529,8 +512,15 @@ module.exports = {
   getFeaturedCarsForPublicSite,
   searchCarsForSite,
   getCarDetailsForSite,
-
-  getPropertyAnalytics,
-  getProjectAnalytics,
-  getCarAnalytics,
+  getProjectDetailsForSite,
+  // private site updates
+  updateMySiteBasic,
+  updateMySiteTheme,
+  updateMySiteSettings,
+  setPublishState,
+  updateMySiteAll,
+  setTemplateStep,
+  getPropertyDetailsForSite,
+  getSimilarCars,
+  getSimilarListings
 };

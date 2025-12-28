@@ -17,7 +17,9 @@ function normalizeExtraData(extraData = {}) {
     p.is_project = Boolean(p.is_project);
     p.files = p.files || {};
     ['brochure', 'unit_plans', 'payment_plan', 'price_table'].forEach((k) => {
-      if (p.files[k] != null && typeof p.files[k] !== 'string') p.files[k] = String(p.files[k]);
+      if (p.files[k] != null && typeof p.files[k] !== 'string') {
+        p.files[k] = String(p.files[k]);
+      }
     });
   }
 
@@ -33,7 +35,7 @@ function normalizeExtraData(extraData = {}) {
 // ==========================
 async function createListing({
   dealer_id,
-  site_id,
+  site_id, // REQUIRED
   type,
   title,
   description,
@@ -135,7 +137,9 @@ async function updateListing(id, dealer_id, site_id, fields) {
     'is_published','data',
   ];
 
-  if (fields.data !== undefined) fields.data = normalizeExtraData(fields.data || {});
+  if (fields.data !== undefined) {
+    fields.data = normalizeExtraData(fields.data || {});
+  }
 
   const setParts = [];
   const params = [];
@@ -191,34 +195,9 @@ async function updateProjectListing(id, dealer_id, site_id, fields) {
   return updated;
 }
 
-async function getPropertyById(id, dealer_id) {
-  const res = await db.query(
-    `SELECT * FROM listings
-     WHERE id = $1 AND dealer_id = $2 AND type = 'property'
-     LIMIT 1`,
-    [id, dealer_id]
-  );
-  return res.rows[0] || null;
-}
-
-async function getProjectById(id, dealer_id) {
-  const res = await db.query(
-    `SELECT * FROM listings
-     WHERE id = $1 AND dealer_id = $2 AND type = 'project'
-     LIMIT 1`,
-    [id, dealer_id]
-  );
-  return res.rows[0] || null;
-}
-
 // ==========================
 // Public (By site_id)
 // ==========================
-function clampInt(v, def = null) {
-  const n = Number(v);
-  return Number.isFinite(n) ? n : def;
-}
-
 async function getFeaturedListingsForSite(site_id, { limit = 6 } = {}) {
   const result = await db.query(
     `SELECT l.*
@@ -235,98 +214,7 @@ async function getFeaturedListingsForSite(site_id, { limit = 6 } = {}) {
   return result.rows;
 }
 
-function buildListingsPublicWhere(site_id, filters = {}) {
-  const conditions = [
-    `l.site_id = $1`,
-    `l.type IN ('property','project')`,
-    `l.status = 'active'`,
-    `l.is_published = TRUE`,
-  ];
-  const params = [site_id];
-  let idx = 2;
 
-  if (filters.type && ['property', 'project'].includes(filters.type)) {
-    conditions.push(`l.type = $${idx}`);
-    params.push(filters.type);
-    idx++;
-  }
-
-  if (filters.city) { conditions.push(`l.city ILIKE $${idx}`); params.push(`%${filters.city}%`); idx++; }
-  if (filters.category) { conditions.push(`l.category ILIKE $${idx}`); params.push(`%${filters.category}%`); idx++; }
-
-  if (filters.search) {
-    conditions.push(`(l.title ILIKE $${idx} OR l.description ILIKE $${idx})`);
-    params.push(`%${filters.search}%`);
-    idx++;
-  }
-
-  const minPrice = clampInt(filters.minPrice);
-  const maxPrice = clampInt(filters.maxPrice);
-  if (minPrice != null) { conditions.push(`l.price >= $${idx}`); params.push(minPrice); idx++; }
-  if (maxPrice != null) { conditions.push(`l.price <= $${idx}`); params.push(maxPrice); idx++; }
-
-  const minBedrooms = clampInt(filters.minBedrooms);
-  if (minBedrooms != null) {
-    conditions.push(`COALESCE((l.data->'details'->>'bedrooms')::int, 0) >= $${idx}`);
-    params.push(minBedrooms);
-    idx++;
-  }
-
-  const minArea = clampInt(filters.minArea);
-  const maxArea = clampInt(filters.maxArea);
-  if (minArea != null) {
-    conditions.push(`COALESCE((l.data->'details'->>'area')::numeric, 0) >= $${idx}`);
-    params.push(minArea);
-    idx++;
-  }
-  if (maxArea != null) {
-    conditions.push(`COALESCE((l.data->'details'->>'area')::numeric, 0) <= $${idx}`);
-    params.push(maxArea);
-    idx++;
-  }
-
-  return { where: `WHERE ${conditions.join(' AND ')}`, params, idx };
-}
-
-function buildListingsSort(sort) {
-  switch (sort) {
-    case 'price_asc': return `l.price ASC NULLS LAST, l.created_at DESC`;
-    case 'price_desc': return `l.price DESC NULLS LAST, l.created_at DESC`;
-    default: return `l.created_at DESC`;
-  }
-}
-
-async function searchPublicListingsForSite(site_id, filters = {}, pagination = {}) {
-  const page = Number(pagination.page ?? filters.page) || 1;
-  const pageSize = Number(pagination.pageSize ?? filters.pageSize) || 12;
-  const offset = (page - 1) * pageSize;
-
-  const { where, params, idx } = buildListingsPublicWhere(site_id, filters);
-  const orderBy = buildListingsSort(filters.sort);
-
-  const listRes = await db.query(
-    `SELECT l.*
-     FROM listings l
-     ${where}
-     ORDER BY ${orderBy}
-     LIMIT $${idx} OFFSET $${idx + 1}`,
-    [...params, pageSize, offset]
-  );
-
-  const countRes = await db.query(
-    `SELECT COUNT(*) AS total
-     FROM listings l
-     ${where}`,
-    params
-  );
-
-  return {
-    items: listRes.rows,
-    total: Number(countRes.rows[0].total),
-    page,
-    pageSize,
-  };
-}
 
 async function getPublicListingByIdForSite(site_id, listingId) {
   const res = await db.query(
@@ -343,50 +231,164 @@ async function getPublicListingByIdForSite(site_id, listingId) {
   return res.rows[0] || null;
 }
 
-async function getSimilarPublicListingsForSite(site_id, listingId, { limit = 6 } = {}) {
-  const baseRes = await db.query(
-    `SELECT id, type, city, category, price
+
+
+
+
+async function getPropertyById(id, dealer_id) {
+  const res = await db.query(
+    `SELECT *
      FROM listings
+     WHERE id = $1 AND dealer_id = $2 AND type = 'property'
+     LIMIT 1`,
+    [id, dealer_id]
+  );
+  return res.rows[0] || null;
+}
+
+async function getProjectById(id, dealer_id) {
+  const res = await db.query(
+    `SELECT *
+     FROM listings
+     WHERE id = $1 AND dealer_id = $2 AND type = 'project'
+     LIMIT 1`,
+    [id, dealer_id]
+  );
+  return res.rows[0] || null;
+}
+
+async function searchPublicListingsForSite(site_id, filters = {}, pagination = {}) {
+  const page = Number(pagination.page || filters.page) || 1;
+  const pageSize = Number(pagination.pageSize || filters.pageSize) || 12;
+  const offset = (page - 1) * pageSize;
+
+  const where = [
+    `l.site_id = $1`,
+    `l.status = 'active'`,
+    `l.is_published = TRUE`,
+    `l.type IN ('property','project')`,
+  ];
+  const params = [site_id];
+  let idx = 2;
+
+  const {
+    type,       // property | project (اختياري)
+    city,
+    category,
+    min_price,
+    max_price,
+    search,
+  } = filters;
+
+  if (type && ['property','project'].includes(type)) {
+    where.push(`l.type = $${idx++}`);
+    params.push(type);
+  }
+
+  if (city) {
+    where.push(`l.city ILIKE $${idx++}`);
+    params.push(`%${city}%`);
+  }
+
+  if (category) {
+    where.push(`l.category = $${idx++}`);
+    params.push(category);
+  }
+
+  if (min_price) { where.push(`l.price >= $${idx++}`); params.push(Number(min_price)); }
+  if (max_price) { where.push(`l.price <= $${idx++}`); params.push(Number(max_price)); }
+
+  if (search) {
+    where.push(`(l.title ILIKE $${idx} OR l.description ILIKE $${idx})`);
+    params.push(`%${search}%`);
+    idx++;
+  }
+
+  const whereClause = `WHERE ${where.join(' AND ')}`;
+
+  const listRes = await db.query(
+    `SELECT l.*
+     FROM listings l
+     ${whereClause}
+     ORDER BY l.created_at DESC
+     LIMIT $${idx++} OFFSET $${idx++}`,
+    [...params, pageSize, offset]
+  );
+
+  const countRes = await db.query(
+    `SELECT COUNT(*) AS total
+     FROM listings l
+     ${whereClause}`,
+    params
+  );
+
+  return {
+    items: listRes.rows,
+    total: Number(countRes.rows[0].total),
+    page,
+    pageSize,
+  };
+}
+
+async function getSimilarListingForSite(site_id, listingId, { limit = 4 } = {}) {
+  // 1) base listing
+  const baseRes = await db.query(
+    `SELECT * FROM listings
      WHERE id = $1 AND site_id = $2
        AND status = 'active' AND is_published = TRUE
        AND type IN ('property','project')
      LIMIT 1`,
     [listingId, site_id]
   );
-
   const base = baseRes.rows[0];
   if (!base) return [];
 
+  const minP = base.price ? Math.floor(Number(base.price) * 0.8) : null;
+  const maxP = base.price ? Math.ceil(Number(base.price) * 1.2) : null;
+
+  const where = [
+    `l.site_id = $1`,
+    `l.id <> $2`,
+    `l.status = 'active'`,
+    `l.is_published = TRUE`,
+    `l.type = $3`,
+  ];
   const params = [site_id, listingId, base.type];
   let idx = 4;
 
-  const conditions = [
-    `l.site_id = $1`,
-    `l.id <> $2`,
-    `l.type = $3`,
-    `l.status = 'active'`,
-    `l.is_published = TRUE`,
-  ];
+  if (base.city) { where.push(`l.city = $${idx++}`); params.push(base.city); }
+  if (base.category) { where.push(`l.category = $${idx++}`); params.push(base.category); }
 
-  if (base.city) { conditions.push(`l.city ILIKE $${idx}`); params.push(`%${base.city}%`); idx++; }
-  if (base.category) { conditions.push(`l.category ILIKE $${idx}`); params.push(`%${base.category}%`); idx++; }
-
-  if (base.price != null) {
-    conditions.push(`(l.price BETWEEN $${idx} AND $${idx + 1})`);
-    params.push(Math.floor(base.price * 0.8), Math.ceil(base.price * 1.2));
-    idx += 2;
+  if (minP !== null && maxP !== null) {
+    where.push(`l.price BETWEEN $${idx++} AND $${idx++}`);
+    params.push(minP, maxP);
   }
-
-  const where = `WHERE ${conditions.join(' AND ')}`;
 
   const res = await db.query(
     `SELECT l.*
      FROM listings l
-     ${where}
+     WHERE ${where.join(' AND ')}
      ORDER BY l.created_at DESC
-     LIMIT $${idx}`,
+     LIMIT $${idx++}`,
     [...params, limit]
   );
+
+  // fallback: نفس النوع فقط
+  if (!res.rows.length) {
+    const fallback = await db.query(
+      `SELECT l.*
+       FROM listings l
+       WHERE l.site_id = $1
+         AND l.id <> $2
+         AND l.status = 'active'
+         AND l.is_published = TRUE
+         AND l.type = $3
+       ORDER BY l.created_at DESC
+       LIMIT $4`,
+      [site_id, listingId, base.type, limit]
+    );
+    return fallback.rows;
+  }
 
   return res.rows;
 }
@@ -400,12 +402,13 @@ module.exports = {
   updatePropertyListing,
   updateProjectListing,
   deleteListing,
-  getPropertyById,
-  getProjectById,
-
-  // public
+  
+  // public by site_id
   getFeaturedListingsForSite,
   searchPublicListingsForSite,
   getPublicListingByIdForSite,
-  getSimilarPublicListingsForSite,
+  getSimilarListingForSite,
+
+  getPropertyById,
+  getProjectById,
 };

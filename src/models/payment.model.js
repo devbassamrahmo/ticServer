@@ -10,8 +10,8 @@ async function createPaymentRecord({
 }) {
   const res = await db.query(
     `INSERT INTO payments (
-      user_id, amount_halalas, currency, description, meta, status, gateway_fee_halalas
-    ) VALUES ($1,$2,$3,$4,$5,'created',0)
+      user_id, amount_halalas, currency, description, meta, status
+    ) VALUES ($1,$2,$3,$4,$5,'created')
     RETURNING *`,
     [user_id, amount_halalas, currency, description, meta]
   );
@@ -30,7 +30,7 @@ async function attachGatewayInfo(localPaymentId, { gateway_payment_id }) {
 }
 
 async function updatePaymentByGatewayId(gateway_payment_id, fields) {
-  const allowed = ['status', 'gateway_fee_halalas', 'meta'];
+  const allowed = ['status', 'gateway_fee_halalas', 'meta']; // شلنا updated_at
 
   const setParts = [];
   const params = [];
@@ -63,34 +63,9 @@ async function findPaymentById(id) {
   return res.rows[0] || null;
 }
 
-async function findPaymentByGatewayId(gatewayId) {
-  const res = await db.query(
-    `SELECT * FROM payments WHERE gateway_payment_id = $1 LIMIT 1`,
-    [gatewayId]
-  );
-  return res.rows[0] || null;
-}
-
-/**
- * Idempotent: يرجّع صف واحد فقط إذا أول مرة
- * إذا كان fulfilled قبل → يرجع null
- */
-async function markPaymentFulfilled(paymentId) {
-  const res = await db.query(
-    `UPDATE payments
-     SET fulfilled_at = NOW(), fulfillment_status = 'done', updated_at = NOW()
-     WHERE id = $1 AND fulfilled_at IS NULL
-     RETURNING *`,
-    [paymentId]
-  );
-  return res.rows[0] || null;
-}
-
 module.exports = {
   createPaymentRecord,
   attachGatewayInfo,
   updatePaymentByGatewayId,
   findPaymentById,
-  findPaymentByGatewayId,
-  markPaymentFulfilled,
 };
