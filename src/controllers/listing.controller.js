@@ -23,31 +23,37 @@ function buildExtraDataFromBody(body) {
     license,
     ad_info,
     contact,
-    media, // الفرونت عم يبعت media
+    media,         // الفرونت يبعت media (array)
+    project_info,  // اختياري (بس للمشاريع)
   } = body;
 
-  const images = Array.isArray(media) ? media : []; // ✅ مهم: model بيقرأ data.images
+  // ✅ موديلك بيقرأ data.images
+  const images = Array.isArray(media) ? media : [];
 
   return {
     basic: basic || {},
     details: details || {},
     location: location || {},
 
-    // خليها Array
+    // ✅ خليها Array دائماً
     features: Array.isArray(features) ? features : [],
-    project_info: project_info || undefined,
+
     guarantees: guarantees || '',
     license: license || {},
     ad_info: ad_info || {},
     contact: contact || {},
 
-    // ✅ نخزن الصور بالاسم اللي model متوقعه
+    // ✅ نخزن الصور بالاسم اللي الموديل متوقعه
     images,
 
-    // اختياري: إذا بدك تضل محافظ على media
+    // ✅ اختياري: إذا بدك تضل محافظ على media كمان
     media: images,
+
+    // ✅ بس إذا موجودة (للمشاريع)
+    ...(project_info !== undefined ? { project_info } : {}),
   };
 }
+
 
 async function requireRealestateSiteOrThrow(ownerId) {
   const site = await getSiteByOwner(ownerId, 'realestate');
