@@ -36,7 +36,7 @@ exports.completeOnboardingStep = async (req, res) => {
     if (!steps) {
       return res.status(404).json({
         success: false,
-        message: 'هذه الخطوة غير موجودة لهذا المستخدم',
+        message: 'هذه الخطوة غير موجودة',
       });
     }
 
@@ -44,8 +44,23 @@ exports.completeOnboardingStep = async (req, res) => {
       success: true,
       steps,
     });
+
   } catch (err) {
+
+    // 👈 هون المهم
+    if (err.message === 'STEP_NOT_CURRENT') {
+      return res.status(400).json({
+        success: false,
+        code: 'STEP_NOT_CURRENT',
+        message: 'لا يمكنك إكمال هذه الخطوة قبل إكمال الخطوة الحالية',
+      });
+    }
+
     console.error('completeOnboardingStep error:', err);
-    return res.status(500).json({ success: false, message: 'خطأ في السيرفر' });
+    return res.status(500).json({
+      success: false,
+      message: 'خطأ في السيرفر',
+    });
   }
 };
+
