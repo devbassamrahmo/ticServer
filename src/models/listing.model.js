@@ -262,47 +262,99 @@ async function searchPublicListingsForSite(site_id, filters = {}, pagination = {
   const pageSize = Number(pagination.pageSize || filters.pageSize) || 12;
   const offset = (page - 1) * pageSize;
 
+  const params = [site_id];
+  let idx = 2;
+
   const where = [
     `l.site_id = $1`,
     `l.status = 'active'`,
     `l.is_published = TRUE`,
-    `l.type IN ('property','project')`,
   ];
-  const params = [site_id];
-  let idx = 2;
 
-  const {
-    type,       // property | project (اختياري)
-    city,
-    category,
-    min_price,
-    max_price,
-    search,
-  } = filters;
-
-  if (type && ['property','project'].includes(type)) {
+  // type: property | project (optional)
+  if (filters.type && ['property', 'project'].includes(filters.type)) {
     where.push(`l.type = $${idx++}`);
-    params.push(type);
+    params.push(filters.type);
+  } else {
+    where.push(`l.type IN ('property','project')`);
   }
 
-  if (city) {
-    where.push(`l.city ILIKE $${idx++}`);
-    params.push(`%${city}%`);
-  }
-
-  if (category) {
-    where.push(`l.category = $${idx++}`);
-    params.push(category);
-  }
-
-  if (min_price) { where.push(`l.price >= $${idx++}`); params.push(Number(min_price)); }
-  if (max_price) { where.push(`l.price <= $${idx++}`); params.push(Number(max_price)); }
-
-  if (search) {
+  // text search
+  if (filters.search) {
     where.push(`(l.title ILIKE $${idx} OR l.description ILIKE $${idx})`);
-    params.push(`%${search}%`);
+    params.push(`%${filters.search}%`);
     idx++;
   }
+
+  // city (column)
+  if (filters.city) {
+    where.push(`l.city ILIKE $${idx++}`);
+    params.push(`%${filters.city}%`);
+  }
+
+  // district (inside data.location.district)
+  if (filters.district) {
+    where.push(`(l.data->'location'->>'district') ILIKE $${idx++}`);
+    params.push(`%${filters.district}%`);
+  }
+
+  // purpose (inside data.basic.purpose)
+  if (filters.purpose) {
+    where.push(`(l.data->'basic'->>'purpose') = $${idx++}`);
+    params.push(String(filters.purpose));
+  }
+
+  // property_type (inside data.basic.property_type)
+  if (filters.property_type) {
+    where.push(`(l.data->'basic'->>'property_type') = $${idx++}`);
+    params.push(String(filters.property_type));
+  }
+
+  // rooms (inside data.basic.rooms) - numeric compare
+  if (filters.min_rooms) {
+    where.push(`COALESCE(NULLIF(l.data->'basic'->>'rooms','')::int, 0) >= $${idx++}`);
+    params.push(Number(filters.min_rooms));
+  }
+  if (filters.max_rooms) {
+    where.push(`COALESCE(NULLIF(l.data->'basic'->>'rooms','')::int, 0) <= $${idx++}`);
+    params.push(Number(filters.max_rooms));
+  }
+
+  // area (prefer built_area, fallback land_area if you want later)
+  if (filters.min_area) {
+    where.push(`COALESCE(NULLIF(l.data->'basic'->>'built_area','')::numeric, 0) >= $${idx++}`);
+    params.push(Number(filters.min_area));
+  }
+  if (filters.max_area) {
+    where.push(`COALESCE(NULLIF(l.data->'basic'->>'built_area','')::numeric, 0) <= $${idx++}`);
+    params.push(Number(filters.max_area));
+  }
+
+  // price
+  if (filters.min_price) {
+    where.push(`COALESCE(l.price, 0) >= $${idx++}`);
+    params.push(Number(filters.min_price));
+  }
+  if (filters.max_price) {
+    where.push(`COALESCE(l.price, 0) <= $${idx++}`);
+    params.push(Number(filters.max_price));
+  }
+
+  // property_age (inside data.basic.property_age)
+  if (filters.min_age) {
+    where.push(`COALESCE(NULLIF(l.data->'basic'->>'property_age','')::int, 0) >= $${idx++}`);
+    params.push(Number(filters.min_age));
+  }
+  if (filters.max_age) {
+    where.push(`COALESCE(NULLIF(l.data->'basic'->>'property_age','')::int, 0) <= $${idx++}`);
+    params.push(Number(filters.max_age));
+  }
+
+  // sorting
+  let orderBy = `l.created_at DESC`;
+  if (filters.sort === 'price_asc') orderBy = `l.price ASC NULLS LAST`;
+  if (filters.sort === 'price_desc') orderBy = `l.price DESC NULLS LAST`;
+  if (filters.sort === 'newest') orderBy = `l.created_at DESC`;
 
   const whereClause = `WHERE ${where.join(' AND ')}`;
 
@@ -310,7 +362,7 @@ async function searchPublicListingsForSite(site_id, filters = {}, pagination = {
     `SELECT l.*
      FROM listings l
      ${whereClause}
-     ORDER BY l.created_at DESC
+     ORDER BY ${orderBy}
      LIMIT $${idx++} OFFSET $${idx++}`,
     [...params, pageSize, offset]
   );
@@ -324,7 +376,7 @@ async function searchPublicListingsForSite(site_id, filters = {}, pagination = {
 
   return {
     items: listRes.rows,
-    total: Number(countRes.rows[0].total),
+    total: Number(countRes.rows[0]?.total || 0),
     page,
     pageSize,
   };
