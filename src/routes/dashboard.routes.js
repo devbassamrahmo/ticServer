@@ -12,7 +12,7 @@ router.get('/summary', dashboardController.getSummary);
 // منحنى الزيارات
 router.get('/visits', dashboardController.getVisits);
 
-// أكثر العقارات زيارة
+// ✅ خلّيها متل ما كانت بالضبط
 router.get('/top-listings', dashboardController.getTopListings);
 
 module.exports = router;

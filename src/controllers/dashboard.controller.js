@@ -2,7 +2,7 @@
 const {
   getDashboardSummary,
   getVisitsTimeseries,
-  getTopListings,
+  getTopItems,
 } = require('../models/dashboard.model');
 
 exports.getSummary = async (req, res) => {
@@ -39,6 +39,7 @@ exports.getVisits = async (req, res) => {
   }
 };
 
+// ✅ خلي اسمها getTopListings كرمال ما تغيّر routes/فرونت
 exports.getTopListings = async (req, res) => {
   try {
     const dealer_id = req.user.id;
@@ -46,7 +47,7 @@ exports.getTopListings = async (req, res) => {
 
     const lim = limit ? Number(limit) : 10;
 
-    const data = await getTopListings(dealer_id, lim, { from, to });
+    const data = await getTopItems(dealer_id, lim, { from, to });
 
     return res.json({
       success: true,
