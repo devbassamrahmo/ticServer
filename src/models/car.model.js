@@ -12,6 +12,7 @@ function normalizeFeatures(features) {
 // ==========================
 // Private (Dashboard)
 // ==========================
+
 async function createCarListing({ dealer_id, site_id, data }) {
   const {
     title,
@@ -40,6 +41,13 @@ async function createCarListing({ dealer_id, site_id, data }) {
     status,
     is_published,
     currency,
+
+    // ✅ NEW optional fields
+    owner_name,
+    owner_phone,
+    owner_email,
+    account_type,
+    company_name,
   } = data;
 
   const normalizedFeatures = normalizeFeatures(features);
@@ -55,7 +63,9 @@ async function createCarListing({ dealer_id, site_id, data }) {
       features, images,
       whatsapp_enabled, phone_enabled,
       importer, engine_power_hp,
-      status, is_published
+      status, is_published,
+
+      owner_name, owner_phone, owner_email, account_type, company_name
     )
     VALUES (
       $1,$2,
@@ -66,7 +76,9 @@ async function createCarListing({ dealer_id, site_id, data }) {
       $21::jsonb,$22::jsonb,
       $23,$24,
       $25,$26,
-      $27,$28
+      $27,$28,
+
+      $29,$30,$31,$32,$33
     )
     RETURNING *`,
     [
@@ -98,11 +110,19 @@ async function createCarListing({ dealer_id, site_id, data }) {
       engine_power_hp || null,
       status || 'draft',
       Boolean(is_published),
+
+      // ✅ NEW optional fields
+      owner_name || null,
+      owner_phone || null,
+      owner_email || null,
+      account_type || null,
+      company_name || null,
     ]
   );
 
   return result.rows[0];
 }
+
 
 async function getCarsForSite({ dealer_id, site_id, page = 1, pageSize = 10, q }) {
   const offset = (page - 1) * pageSize;
@@ -167,6 +187,13 @@ async function updateCarListing({ id, dealer_id, site_id, fields }) {
     'price','currency','fuel_type','transmission','engine_size','cylinders','drive_type',
     'features','images','whatsapp_enabled','phone_enabled',
     'importer','engine_power_hp','status','is_published',
+
+    // ✅ NEW optional fields
+    'owner_name',
+    'owner_phone',
+    'owner_email',
+    'account_type',
+    'company_name',
   ];
 
   if (fields.features !== undefined) {
@@ -205,6 +232,7 @@ async function updateCarListing({ id, dealer_id, site_id, fields }) {
 
   return result.rows[0] || null;
 }
+
 
 async function deleteCarListing({ id, dealer_id, site_id }) {
   const result = await db.query(
