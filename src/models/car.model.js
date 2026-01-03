@@ -48,6 +48,9 @@ async function createCarListing({ dealer_id, site_id, data }) {
     owner_email,
     account_type,
     company_name,
+
+    // ✅ NEW optional field
+    location_car,
   } = data;
 
   const normalizedFeatures = normalizeFeatures(features);
@@ -65,7 +68,8 @@ async function createCarListing({ dealer_id, site_id, data }) {
       importer, engine_power_hp,
       status, is_published,
 
-      owner_name, owner_phone, owner_email, account_type, company_name
+      owner_name, owner_phone, owner_email, account_type, company_name,
+      location_car
     )
     VALUES (
       $1,$2,
@@ -78,7 +82,8 @@ async function createCarListing({ dealer_id, site_id, data }) {
       $25,$26,
       $27,$28,
 
-      $29,$30,$31,$32,$33
+      $29,$30,$31,$32,$33,
+      $34
     )
     RETURNING *`,
     [
@@ -117,11 +122,15 @@ async function createCarListing({ dealer_id, site_id, data }) {
       owner_email || null,
       account_type || null,
       company_name || null,
+
+      // ✅ location_car (string or json -> حسب عمودك بالداتا بيز)
+      location_car || null,
     ]
   );
 
   return result.rows[0];
 }
+
 
 
 async function getCarsForSite({ dealer_id, site_id, page = 1, pageSize = 10, q }) {
@@ -194,6 +203,9 @@ async function updateCarListing({ id, dealer_id, site_id, fields }) {
     'owner_email',
     'account_type',
     'company_name',
+
+    // ✅ NEW optional field
+    'location_car',
   ];
 
   if (fields.features !== undefined) {
@@ -232,6 +244,7 @@ async function updateCarListing({ id, dealer_id, site_id, fields }) {
 
   return result.rows[0] || null;
 }
+
 
 
 async function deleteCarListing({ id, dealer_id, site_id }) {
