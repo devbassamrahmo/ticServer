@@ -13,8 +13,8 @@ router.get('/check-slug', siteController.checkSlug);
 router.get('/public/:slug/listings/featured', siteController.getFeaturedRealestateForSite);
 router.get('/public/:slug/listings/search', siteController.searchRealestateForSite);
 router.get('/public/:slug/listings/:listingId', siteController.getRealestateDetailsForSite);
-router.get('/public/:slug/properties/:id', siteController.getPropertyDetailsForSite);
-router.get('/public/:slug/projects/:id', siteController.getProjectDetailsForSite);
+// router.get('/public/:slug/properties/:id', siteController.getPropertyDetailsForSite);
+// router.get('/public/:slug/projects/:id', siteController.getProjectDetailsForSite);
 
 // Cars public endpoints for a site
 router.get('/public/:slug/cars/featured', siteController.getFeaturedCarsForPublicSite);

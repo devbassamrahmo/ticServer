@@ -27,7 +27,7 @@ const {
 } = require('../models/car.model');
 
 const { completeStep } = require('../models/onboarding.model');
-
+const {db} = require('../config/db')
 function buildTheme(colors, fonts) {
   return { colors: colors || {}, fonts: fonts || {} };
 }
