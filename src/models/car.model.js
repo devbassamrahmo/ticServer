@@ -8,7 +8,13 @@ function normalizeArrayMax10(arr) {
 function normalizeFeatures(features) {
   return Array.isArray(features) ? features : [];
 }
+function isUuid(v) {
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(String(v));
+}
 
+function isDigits(v) {
+  return /^[0-9]+$/.test(String(v));
+}
 // ==========================
 // Private (Dashboard)
 // ==========================
@@ -346,18 +352,47 @@ async function searchPublicCarsForSite(site_id, filters = {}, pagination = {}) {
   };
 }
 
-async function getPublicCarByIdForSite(site_id, carId) {
-  const res = await db.query(
-    `SELECT c.*
-     FROM car_listings c
-     WHERE c.id = $1
-       AND c.site_id = $2
-       AND c.status = 'active'
-       AND c.is_published = TRUE
-     LIMIT 1`,
-    [carId, site_id]
-  );
-  return res.rows[0] || null;
+async function getPublicCarByIdForSite(site_id, carIdOrPublicId) {
+  const val = String(carIdOrPublicId || '').trim();
+  if (!val) return null;
+
+  // 1) internal id (digits) => public_id
+  if (isDigits(val)) {
+    const publicId = Number(val);
+    if (!Number.isFinite(publicId)) return null;
+
+    const res = await db.query(
+      `SELECT c.*
+       FROM car_listings c
+       WHERE c.public_id = $1
+         AND c.site_id = $2
+         AND c.status = 'active'
+         AND c.is_published = TRUE
+       LIMIT 1`,
+      [publicId, site_id]
+    );
+
+    return res.rows[0] || null;
+  }
+
+  // 2) fallback UUID => id
+  if (isUuid(val)) {
+    const res = await db.query(
+      `SELECT c.*
+       FROM car_listings c
+       WHERE c.id = $1
+         AND c.site_id = $2
+         AND c.status = 'active'
+         AND c.is_published = TRUE
+       LIMIT 1`,
+      [val, site_id]
+    );
+
+    return res.rows[0] || null;
+  }
+
+  // invalid id format
+  return null;
 }
 
 async function getSimilarCarsForSite(site_id, carId, { limit = 4 } = {}) {

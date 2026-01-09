@@ -29,6 +29,12 @@ function normalizeExtraData(extraData = {}) {
 
   return data;
 }
+function isUuid(v) {
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(String(v));
+}
+function isDigits(v) {
+  return /^[0-9]+$/.test(String(v));
+}
 
 // ==========================
 // Private (Dashboard)
@@ -216,19 +222,48 @@ async function getFeaturedListingsForSite(site_id, { limit = 6 } = {}) {
 
 
 
-async function getPublicListingByIdForSite(site_id, listingId) {
-  const res = await db.query(
-    `SELECT l.*
-     FROM listings l
-     WHERE l.id = $1
-       AND l.site_id = $2
-       AND l.type IN ('property','project')
-       AND l.status = 'active'
-       AND l.is_published = TRUE
-     LIMIT 1`,
-    [listingId, site_id]
-  );
-  return res.rows[0] || null;
+async function getPublicListingByIdForSite(site_id, listingIdOrPublicId) {
+  const val = String(listingIdOrPublicId || '').trim();
+  if (!val) return null;
+
+  // 1) internal id (digits) => public_id
+  if (isDigits(val)) {
+    const publicId = Number(val);
+    if (!Number.isFinite(publicId)) return null;
+
+    const res = await db.query(
+      `SELECT l.*
+       FROM listings l
+       WHERE l.public_id = $1
+         AND l.site_id = $2
+         AND l.type IN ('property','project')
+         AND l.status = 'active'
+         AND l.is_published = TRUE
+       LIMIT 1`,
+      [publicId, site_id]
+    );
+
+    return res.rows[0] || null;
+  }
+
+  // 2) fallback UUID => id
+  if (isUuid(val)) {
+    const res = await db.query(
+      `SELECT l.*
+       FROM listings l
+       WHERE l.id = $1
+         AND l.site_id = $2
+         AND l.type IN ('property','project')
+         AND l.status = 'active'
+         AND l.is_published = TRUE
+       LIMIT 1`,
+      [val, site_id]
+    );
+
+    return res.rows[0] || null;
+  }
+
+  return null;
 }
 
 

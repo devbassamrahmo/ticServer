@@ -8,6 +8,7 @@ function mapReportRow(r) {
     owner_id: r.owner_id,
     target_type: r.target_type,
     target_id: r.target_id,
+    reason: r.reason, // ✅ new
     message: r.message,
     reporter_name: r.reporter_name,
     reporter_email: r.reporter_email,
@@ -26,6 +27,7 @@ async function createReport({
   owner_id,
   target_type,
   target_id,
+  reason, // ✅ new
   message,
   reporter_name,
   reporter_email,
@@ -36,17 +38,19 @@ async function createReport({
   const res = await db.query(
     `INSERT INTO reports (
       site_id, owner_id, target_type, target_id,
-      message, reporter_name, reporter_email, reporter_phone,
+      reason, message,
+      reporter_name, reporter_email, reporter_phone,
       reporter_ip, user_agent
     )
-    VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)
+    VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)
     RETURNING *`,
     [
       site_id,
       owner_id,
       target_type,
       target_id,
-      message,
+      reason,
+      message || null,
       reporter_name || null,
       reporter_email || null,
       reporter_phone || null,
@@ -58,7 +62,7 @@ async function createReport({
   return mapReportRow(res.rows[0]);
 }
 
-async function listReportsForAdmin({ status, sector, q, page = 1, pageSize = 20 }) {
+async function listReportsForAdmin({ status, sector, reason, q, page = 1, pageSize = 20 }) {
   const where = [];
   const params = [];
   let idx = 1;
@@ -71,6 +75,11 @@ async function listReportsForAdmin({ status, sector, q, page = 1, pageSize = 20 
   if (sector) {
     where.push(`s.sector = $${idx++}`);
     params.push(sector);
+  }
+
+  if (reason) {
+    where.push(`r.reason = $${idx++}`);
+    params.push(reason);
   }
 
   if (q) {
