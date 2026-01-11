@@ -8,7 +8,7 @@ function mapReportRow(r) {
     owner_id: r.owner_id,
     target_type: r.target_type,
     target_id: r.target_id,
-    reason: r.reason, // ✅ new
+    reason: r.reason,
     message: r.message,
     reporter_name: r.reporter_name,
     reporter_email: r.reporter_email,
@@ -22,12 +22,15 @@ function mapReportRow(r) {
   };
 }
 
+/**
+ * Create report (public)
+ */
 async function createReport({
   site_id,
   owner_id,
   target_type,
   target_id,
-  reason, // ✅ new
+  reason,
   message,
   reporter_name,
   reporter_email,
@@ -62,6 +65,9 @@ async function createReport({
   return mapReportRow(res.rows[0]);
 }
 
+/**
+ * Admin list reports with filters + pagination
+ */
 async function listReportsForAdmin({ status, sector, reason, q, page = 1, pageSize = 20 }) {
   const where = [];
   const params = [];
@@ -84,10 +90,10 @@ async function listReportsForAdmin({ status, sector, reason, q, page = 1, pageSi
 
   if (q) {
     where.push(`(
-      r.message ILIKE $${idx}
-      OR r.reporter_name ILIKE $${idx}
-      OR r.reporter_phone ILIKE $${idx}
-      OR s.slug ILIKE $${idx}
+      COALESCE(r.message,'') ILIKE $${idx}
+      OR COALESCE(r.reporter_name,'') ILIKE $${idx}
+      OR COALESCE(r.reporter_phone,'') ILIKE $${idx}
+      OR COALESCE(s.slug,'') ILIKE $${idx}
     )`);
     params.push(`%${q}%`);
     idx++;
@@ -99,8 +105,8 @@ async function listReportsForAdmin({ status, sector, reason, q, page = 1, pageSi
   const listRes = await db.query(
     `SELECT
       r.*,
-      s.slug,
-      s.sector
+      s.slug AS site_slug,
+      s.sector AS site_sector
      FROM reports r
      JOIN sites s ON s.id = r.site_id
      ${whereClause}
@@ -118,13 +124,64 @@ async function listReportsForAdmin({ status, sector, reason, q, page = 1, pageSi
   );
 
   return {
-    items: listRes.rows.map(mapReportRow),
+    items: listRes.rows.map((row) => ({
+      ...mapReportRow(row),
+      site_slug: row.site_slug,
+      site_sector: row.site_sector,
+    })),
     total: Number(countRes.rows[0].total),
     page,
     pageSize,
   };
 }
 
+/**
+ * Admin get one report (details)
+ */
+async function getReportByIdForAdmin(reportId) {
+  const res = await db.query(
+    `SELECT
+      r.*,
+      s.slug AS site_slug,
+      s.sector AS site_sector
+     FROM reports r
+     JOIN sites s ON s.id = r.site_id
+     WHERE r.id = $1
+     LIMIT 1`,
+    [reportId]
+  );
+
+  if (!res.rows[0]) return null;
+
+  const row = res.rows[0];
+  return {
+    ...mapReportRow(row),
+    site_slug: row.site_slug,
+    site_sector: row.site_sector,
+  };
+}
+
+/**
+ * Admin update status
+ * - If status becomes 'closed' => set closed_by/closed_at
+ * - Otherwise keep current closed_by/closed_at as-is
+ */
+async function updateReportStatus(reportId, status, adminId) {
+  const res = await db.query(
+    `UPDATE reports
+     SET status = $2,
+         closed_by = CASE WHEN $2 = 'closed' THEN $3 ELSE closed_by END,
+         closed_at = CASE WHEN $2 = 'closed' THEN NOW() ELSE closed_at END
+     WHERE id = $1
+     RETURNING *`,
+    [reportId, status, adminId]
+  );
+  return res.rows[0] ? mapReportRow(res.rows[0]) : null;
+}
+
+/**
+ * Admin close shortcut
+ */
 async function closeReport(reportId, adminId) {
   const res = await db.query(
     `UPDATE reports
@@ -139,5 +196,7 @@ async function closeReport(reportId, adminId) {
 module.exports = {
   createReport,
   listReportsForAdmin,
+  getReportByIdForAdmin,
+  updateReportStatus,
   closeReport,
 };

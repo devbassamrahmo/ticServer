@@ -4,6 +4,7 @@ const router = express.Router();
 const adminController = require('../controllers/admin.controller');
 const { authRequired } = require('../middleware/auth');
 const { adminRequired } = require('../middleware/admin');
+const adminReportsController = require('../controllers/admin.report.controller');
 
 // كل واجهات الأدمن تحتاج auth + admin
 router.use(authRequired, adminRequired);
@@ -26,6 +27,9 @@ router.post('/documents/:documentId/review', adminController.reviewDocument);
 
 // البلاغات
 router.get('/reports', adminController.getReports);
+router.get('/reports/:reportId', adminReportsController.getReportById);
+router.patch('/reports/:reportId/status', express.json(), adminReportsController.updateReportStatus);
 router.patch('/reports/:reportId/close', express.json(), adminController.closeReport);
 router.delete('/reports/:reportId/delete-ad', adminController.deleteAdFromReport);
+
 module.exports = router;
