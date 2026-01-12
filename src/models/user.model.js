@@ -123,11 +123,26 @@ async function markUserNafathVerified(userId, { national_id } = {}) {
   return res.rows[0] || null;
 }
 
+async function setUserSiteSlug(userId, sector, slug) {
+  const col = sector === 'cars' ? 'cars_site_slug' : 'realestate_site_slug';
+
+  const res = await db.query(
+    `UPDATE users
+     SET ${col} = $2
+     WHERE id = $1
+     RETURNING id, ${col}`,
+    [userId, slug || null]
+  );
+
+  return res.rows[0] || null;
+}
+
 module.exports = {
   findUserByPhone,
   createUser,
   findUserById,
   updateUserProfile,
   setVerificationFlags,
-  markUserNafathVerified
+  markUserNafathVerified,
+  setUserSiteSlug
 };

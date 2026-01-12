@@ -1,14 +1,16 @@
+// src/models/site.model.js
 const db = require('../config/db');
 const crypto = require('crypto');
+const { setUserSiteSlug } = require('../models/user.model');
 
 const ALLOWED_TEMPLATES = [
-  'carClassic','carModern','carLuxury',
-  'realestateClassic','realestateModern','realestateLuxury',
+  'carClassic', 'carModern', 'carLuxury',
+  'realestateClassic', 'realestateModern', 'realestateLuxury',
 ];
 
 function makeDraftSlug(ownerId, sector) {
   const rnd = crypto.randomBytes(4).toString('hex');
-  return `draft-${sector}-${ownerId.slice(0,6)}-${rnd}`.toLowerCase();
+  return `draft-${sector}-${ownerId.slice(0, 6)}-${rnd}`.toLowerCase();
 }
 
 function mapSiteRow(row) {
@@ -37,6 +39,15 @@ function mapSiteRow(row) {
   };
 }
 
+async function syncUserSlug(ownerId, sector, slug) {
+  try {
+    await setUserSiteSlug(ownerId, sector, slug);
+  } catch (e) {
+    // ما بدنا نكسر إنشاء/تعديل الموقع بسبب تحديث بروفايل
+    console.error('syncUserSlug error:', e.message);
+  }
+}
+
 async function getSiteByOwner(ownerId, sector) {
   const result = await db.query(
     `SELECT * FROM sites WHERE owner_id = $1 AND sector = $2 LIMIT 1`,
@@ -56,13 +67,19 @@ async function requireOwnerSite(ownerId, sector) {
 }
 
 async function getSiteBySlug(slug) {
-  const result = await db.query(`SELECT * FROM sites WHERE slug = $1 LIMIT 1`, [slug]);
+  const result = await db.query(
+    `SELECT * FROM sites WHERE slug = $1 LIMIT 1`,
+    [slug]
+  );
   const row = result.rows[0];
   return row ? mapSiteRow(row) : null;
 }
 
 async function getSiteConfigBySlug(slug, { requirePublished = true } = {}) {
-  const res = await db.query(`SELECT * FROM sites WHERE slug = $1 LIMIT 1`, [slug]);
+  const res = await db.query(
+    `SELECT * FROM sites WHERE slug = $1 LIMIT 1`,
+    [slug]
+  );
   const row = res.rows[0];
   if (!row) return null;
   if (requirePublished && !row.is_published) return null;
@@ -90,7 +107,10 @@ async function upsertSiteForOwner(ownerId, {
     [ownerId, sector, slug, name || null, template_key, theme || {}, settings || {}, is_published]
   );
 
-  return mapSiteRow(result.rows[0]);
+  const mapped = mapSiteRow(result.rows[0]);
+  await syncUserSlug(ownerId, sector, mapped.slug);
+
+  return mapped;
 }
 
 async function upsertSiteBasic(ownerId, { sector, slug, name, template_key }) {
@@ -109,7 +129,10 @@ async function upsertSiteBasic(ownerId, { sector, slug, name, template_key }) {
     [ownerId, sector, slug, name || null, template_key]
   );
 
-  return mapSiteRow(result.rows[0]);
+  const mapped = mapSiteRow(result.rows[0]);
+  await syncUserSlug(ownerId, sector, mapped.slug);
+
+  return mapped;
 }
 
 async function upsertSiteTheme(ownerId, { sector, colors = {}, fonts = {} }) {
@@ -125,6 +148,7 @@ async function upsertSiteTheme(ownerId, { sector, colors = {}, fonts = {} }) {
     [ownerId, sector, JSON.stringify(colors), JSON.stringify(fonts)]
   );
 
+  // theme ما بيغير slug، بس منرجع mapped كالمعتاد
   return result.rows[0] ? mapSiteRow(result.rows[0]) : null;
 }
 
@@ -163,9 +187,15 @@ async function upsertSiteSettings(ownerId, {
     ]
   );
 
-  return result.rows[0] ? mapSiteRow(result.rows[0]) : null;
-}
+  const mapped = result.rows[0] ? mapSiteRow(result.rows[0]) : null;
 
+  // هون ممكن يتغير slug فعلاً
+  if (mapped) {
+    await syncUserSlug(ownerId, sector, mapped.slug);
+  }
+
+  return mapped;
+}
 
 async function setSitePublish(ownerId, { sector, is_published }) {
   const result = await db.query(
@@ -178,7 +208,9 @@ async function setSitePublish(ownerId, { sector, is_published }) {
   return result.rows[0] ? mapSiteRow(result.rows[0]) : null;
 }
 
-async function updateSiteAll(ownerId, { sector, slug, name, template_key, is_published, theme, settings }) {
+async function updateSiteAll(ownerId, {
+  sector, slug, name, template_key, is_published, theme, settings
+}) {
   if (template_key && !ALLOWED_TEMPLATES.includes(template_key)) {
     throw new Error('INVALID_TEMPLATE');
   }
@@ -210,7 +242,14 @@ async function updateSiteAll(ownerId, { sector, slug, name, template_key, is_pub
     ]
   );
 
-  return result.rows[0] ? mapSiteRow(result.rows[0]) : null;
+  const mapped = result.rows[0] ? mapSiteRow(result.rows[0]) : null;
+
+  // هون ممكن يتغير slug
+  if (mapped) {
+    await syncUserSlug(ownerId, sector, mapped.slug);
+  }
+
+  return mapped;
 }
 
 async function upsertSiteTemplate(ownerId, { sector, template_key }) {
@@ -229,7 +268,12 @@ async function upsertSiteTemplate(ownerId, { sector, template_key }) {
     [ownerId, sector, draftSlug, template_key]
   );
 
-  return mapSiteRow(result.rows[0]);
+  const mapped = mapSiteRow(result.rows[0]);
+
+  // حتى بالـ draft نخزن slug (بتريح الفرونت)
+  await syncUserSlug(ownerId, sector, mapped.slug);
+
+  return mapped;
 }
 
 module.exports = {

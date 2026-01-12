@@ -38,6 +38,8 @@ exports.getProfile = async (req, res) => {
         phone: user.phone,
         account_type: user.account_type,
         sector: user.sector,
+        cars_site_slug: user.cars_site_slug || null,
+        realestate_site_slug: user.realestate_site_slug || null,
         verifications: {
           nafath: user.nafath_verified,
           real_estate_license: user.real_estate_license_verified,
