@@ -27,17 +27,23 @@ const {
 } = require('../models/car.model');
 
 const { completeStep } = require('../models/onboarding.model');
-const {db} = require('../config/db')
+const db = require('../config/db'); // ✅ تصحيح
+
 function buildTheme(colors, fonts) {
   return { colors: colors || {}, fonts: fonts || {} };
 }
 
-function buildSettings(branding, social, location, about) {
+// ✅ أضفنا heroContent هون
+function buildSettings(branding, social, location, about, heroContent) {
   return {
     branding: branding || {},
     social: social || {},
     location: location || {},
     about: about || {},
+    heroContent: {
+      title: heroContent?.title || '',
+      desc: heroContent?.desc || '',
+    },
   };
 }
 
@@ -87,6 +93,7 @@ async function upsertMySite(req, res) {
       social,
       location,
       about,
+      heroContent, // ✅ جديد
       is_published,
     } = req.body;
 
@@ -101,7 +108,7 @@ async function upsertMySite(req, res) {
         name,
         template_key,
         theme: buildTheme(colors, fonts),
-        settings: buildSettings(branding, social, location, about),
+        settings: buildSettings(branding, social, location, about, heroContent),
         is_published,
       });
 
@@ -157,7 +164,7 @@ async function checkSlug(req, res) {
   }
 }
 
-// ===== REAL ESTATE PUBLIC (by site_id) =====
+// ===== REAL ESTATE PUBLIC =====
 
 // GET /api/site/public/:slug/listings/featured?limit=6
 async function getFeaturedRealestateForSite(req, res) {
@@ -214,7 +221,7 @@ async function getRealestateDetailsForSite(req, res) {
   }
 }
 
-// ===== CARS PUBLIC (by site_id) =====
+// ===== CARS PUBLIC =====
 
 // GET /api/site/public/:slug/cars/featured?limit=6
 async function getFeaturedCarsForPublicSite(req, res) {
@@ -309,7 +316,7 @@ async function updateMySiteSettings(req, res) {
   try {
     const ownerId = req.user.id;
 
-    const { sector, slug, name, branding, social, location, about } = req.body;
+    const { sector, slug, name, branding, social, location, about, heroContent } = req.body; // ✅
     if (!sector) return res.status(400).json({ success:false, message:'sector مطلوب' });
     if (!slug)   return res.status(400).json({ success:false, message:'slug مطلوب' });
 
@@ -321,6 +328,7 @@ async function updateMySiteSettings(req, res) {
       social: social || {},
       location: location || {},
       about: about || {},
+      heroContent: heroContent || {}, // ✅
     });
 
     if (!site) {
@@ -392,6 +400,7 @@ async function setTemplateStep(req, res) {
   }
 }
 
+// ====== OWNER details (انت كنت عاملن) ======
 async function getPropertyDetailsForSite(req, res) {
   try {
     const { slug, id } = req.params;
@@ -425,7 +434,7 @@ async function getPropertyDetailsForSite(req, res) {
     console.error('getPropertyDetailsForSite error:', err);
     return res.status(500).json({ success: false, message: 'خطأ في السيرفر' });
   }
-};
+}
 
 async function getProjectDetailsForSite(req, res) {
   try {
@@ -460,9 +469,9 @@ async function getProjectDetailsForSite(req, res) {
     console.error('getProjectDetailsForSite error:', err);
     return res.status(500).json({ success: false, message: 'خطأ في السيرفر' });
   }
-};
+}
 
-// GET /api/site/public/:slug/cars/:carId/similar?limit=4
+// similar cars
 async function getSimilarCars(req, res) {
   try {
     const { slug, carId } = req.params;
@@ -479,7 +488,7 @@ async function getSimilarCars(req, res) {
   }
 }
 
-// GET /api/site/public/:slug/listings/:listingId/similar?limit=4
+// similar listings
 async function getSimilarListings(req, res) {
   try {
     const { slug, listingId } = req.params;
@@ -496,7 +505,6 @@ async function getSimilarListings(req, res) {
   }
 }
 
-
 module.exports = {
   getMySite,
   upsertMySite,
@@ -512,7 +520,11 @@ module.exports = {
   getFeaturedCarsForPublicSite,
   searchCarsForSite,
   getCarDetailsForSite,
+
+  // owner extra
   getProjectDetailsForSite,
+  getPropertyDetailsForSite,
+
   // private site updates
   updateMySiteBasic,
   updateMySiteTheme,
@@ -520,7 +532,8 @@ module.exports = {
   setPublishState,
   updateMySiteAll,
   setTemplateStep,
-  getPropertyDetailsForSite,
+
+  // similar
   getSimilarCars,
-  getSimilarListings
+  getSimilarListings,
 };

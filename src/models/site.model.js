@@ -34,6 +34,9 @@ function mapSiteRow(row) {
     location: settings.location || {},
     about: settings.about || {},
 
+    // ✅ جديد
+    heroContent: settings.heroContent || { title: '', desc: '' },
+
     created_at: row.created_at,
     updated_at: row.updated_at,
   };
@@ -43,7 +46,6 @@ async function syncUserSlug(ownerId, sector, slug) {
   try {
     await setUserSiteSlug(ownerId, sector, slug);
   } catch (e) {
-    // ما بدنا نكسر إنشاء/تعديل الموقع بسبب تحديث بروفايل
     console.error('syncUserSlug error:', e.message);
   }
 }
@@ -57,13 +59,9 @@ async function getSiteByOwner(ownerId, sector) {
   return row ? mapSiteRow(row) : null;
 }
 
-/**
- * هذا اللي رح نستخدمه لإنشاء الإعلانات
- * - إذا ما عنده موقع لهذا القطاع → null
- */
 async function requireOwnerSite(ownerId, sector) {
   const site = await getSiteByOwner(ownerId, sector);
-  return site; // قد تكون null
+  return site;
 }
 
 async function getSiteBySlug(slug) {
@@ -109,7 +107,6 @@ async function upsertSiteForOwner(ownerId, {
 
   const mapped = mapSiteRow(result.rows[0]);
   await syncUserSlug(ownerId, sector, mapped.slug);
-
   return mapped;
 }
 
@@ -131,7 +128,6 @@ async function upsertSiteBasic(ownerId, { sector, slug, name, template_key }) {
 
   const mapped = mapSiteRow(result.rows[0]);
   await syncUserSlug(ownerId, sector, mapped.slug);
-
   return mapped;
 }
 
@@ -148,7 +144,6 @@ async function upsertSiteTheme(ownerId, { sector, colors = {}, fonts = {} }) {
     [ownerId, sector, JSON.stringify(colors), JSON.stringify(fonts)]
   );
 
-  // theme ما بيغير slug، بس منرجع mapped كالمعتاد
   return result.rows[0] ? mapSiteRow(result.rows[0]) : null;
 }
 
@@ -160,17 +155,24 @@ async function upsertSiteSettings(ownerId, {
   social = {},
   location = {},
   about = {},
+  heroContent = {}, // ✅
 }) {
+  const safeHero = {
+    title: heroContent?.title || '',
+    desc: heroContent?.desc || '',
+  };
+
   const result = await db.query(
     `UPDATE sites
      SET
        slug = COALESCE($3, slug),
        name = COALESCE($4, name),
        settings = jsonb_build_object(
-         'branding', COALESCE(settings->'branding','{}'::jsonb) || $5::jsonb,
-         'social',   COALESCE(settings->'social','{}'::jsonb)   || $6::jsonb,
-         'location', COALESCE(settings->'location','{}'::jsonb) || $7::jsonb,
-         'about',    COALESCE(settings->'about','{}'::jsonb)    || $8::jsonb
+         'branding',    COALESCE(settings->'branding','{}'::jsonb)    || $5::jsonb,
+         'social',      COALESCE(settings->'social','{}'::jsonb)      || $6::jsonb,
+         'location',    COALESCE(settings->'location','{}'::jsonb)    || $7::jsonb,
+         'about',       COALESCE(settings->'about','{}'::jsonb)       || $8::jsonb,
+         'heroContent', COALESCE(settings->'heroContent','{}'::jsonb) || $9::jsonb
        ),
        updated_at = NOW()
      WHERE owner_id = $1 AND sector = $2
@@ -184,12 +186,12 @@ async function upsertSiteSettings(ownerId, {
       JSON.stringify(social),
       JSON.stringify(location),
       JSON.stringify(about),
+      JSON.stringify(safeHero),
     ]
   );
 
   const mapped = result.rows[0] ? mapSiteRow(result.rows[0]) : null;
 
-  // هون ممكن يتغير slug فعلاً
   if (mapped) {
     await syncUserSlug(ownerId, sector, mapped.slug);
   }
@@ -244,7 +246,6 @@ async function updateSiteAll(ownerId, {
 
   const mapped = result.rows[0] ? mapSiteRow(result.rows[0]) : null;
 
-  // هون ممكن يتغير slug
   if (mapped) {
     await syncUserSlug(ownerId, sector, mapped.slug);
   }
@@ -269,10 +270,7 @@ async function upsertSiteTemplate(ownerId, { sector, template_key }) {
   );
 
   const mapped = mapSiteRow(result.rows[0]);
-
-  // حتى بالـ draft نخزن slug (بتريح الفرونت)
   await syncUserSlug(ownerId, sector, mapped.slug);
-
   return mapped;
 }
 
