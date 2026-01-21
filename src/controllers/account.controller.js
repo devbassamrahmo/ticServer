@@ -4,16 +4,20 @@ const {
   updateUserProfile,
   setVerificationFlags,
 } = require('../models/user.model');
+
 const {
   createAccountDocument,
   getAccountDocumentsForUser,
 } = require('../models/document.model');
+
 const {
   listSubUsers,
   createSubUser,
   toggleSubUser,
   deleteSubUser,
+  getSubUsers, // ✅ FIX: استيراد getSubUsers بدل subUserModel
 } = require('../models/subUser.model');
+
 const { completeStep } = require('../models/onboarding.model');
 
 exports.getProfile = async (req, res) => {
@@ -74,7 +78,6 @@ exports.updateProfile = async (req, res) => {
       });
     }
 
-    // ممكن نعتبر هالخطوة ضمن onboarding: basic_info
     try {
       await completeStep(userId, 'basic_info');
     } catch (e) {
@@ -132,7 +135,6 @@ exports.verifyNafath = async (req, res) => {
 
     const updated = await setVerificationFlags(userId, { nafath: true });
 
-    // خطوة onboarding: nafath
     try {
       await completeStep(userId, 'nafath');
     } catch (e) {
@@ -291,10 +293,10 @@ exports.getSubUsers = async (req, res) => {
       pageSize,
       city,
       type,
-      status,   // "active" | "inactive"
+      status, // "active" | "inactive"
     } = req.query;
 
-    const result = await subUserModel.getSubUsers(
+    const result = await getSubUsers(
       ownerId,
       { city, type, status },
       { page, pageSize }
@@ -312,5 +314,3 @@ exports.getSubUsers = async (req, res) => {
     });
   }
 };
-
-

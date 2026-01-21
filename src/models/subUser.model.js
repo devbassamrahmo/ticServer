@@ -34,8 +34,8 @@ async function listSubUsers(ownerId, { page = 1, pageSize = 10 }) {
 async function getSubUsers(ownerId, filters = {}, pagination = {}) {
   const {
     city,
-    type,    // نوع المستخدم - مثال: "branch" | "individual" حسب ما انت تستخدم
-    status,  // "active" | "inactive"
+    type,   // ✅ موجود بالـ query بس ما عاد نستخدمه بالـ DB لأن user_type غير موجود
+    status, // "active" | "inactive"
   } = filters;
 
   const page = Number(pagination.page) || 1;
@@ -57,10 +57,10 @@ async function getSubUsers(ownerId, filters = {}, pagination = {}) {
     addFilter('city = ?', city);
   }
 
-  if (type) {
-    // user_type عمودك في الجدول (عدّله لو الاسم مختلف)
-    addFilter('user_type = ?', type);
-  }
+  // ✅ FIX: user_type غير موجود بالجدول، لذلك لا فلترة على type
+  // if (type) {
+  //   addFilter('user_type = ?', type);
+  // }
 
   if (status === 'active') {
     whereParts.push('is_active = TRUE');
@@ -77,7 +77,6 @@ async function getSubUsers(ownerId, filters = {}, pagination = {}) {
       phone,
       email,
       city,
-      user_type,
       is_active,
       created_at
     FROM sub_users
@@ -140,12 +139,10 @@ async function deleteSubUser(ownerId, subUserId) {
   return result.rowCount > 0;
 }
 
-
-
 module.exports = {
   listSubUsers,
   createSubUser,
   toggleSubUser,
   deleteSubUser,
-  getSubUsers
+  getSubUsers,
 };
