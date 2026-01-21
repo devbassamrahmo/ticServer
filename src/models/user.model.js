@@ -8,7 +8,12 @@ async function findUserByPhone(phone) {
         COALESCE(is_admin, false) AS is_admin,
         COALESCE(nafath_verified,false) AS nafath_verified,
         COALESCE(real_estate_license_verified,false) AS real_estate_license_verified,
-        COALESCE(car_license_verified,false) AS car_license_verified
+        COALESCE(car_license_verified,false) AS car_license_verified,
+
+        cars_site_slug,
+        realestate_site_slug,
+        cars_site_template_key,
+        realestate_site_template_key
      FROM users
      WHERE phone = $1
      LIMIT 1`,
@@ -123,15 +128,24 @@ async function markUserNafathVerified(userId, { national_id } = {}) {
   return res.rows[0] || null;
 }
 
-async function setUserSiteSlug(userId, sector, slug) {
-  const col = sector === 'cars' ? 'cars_site_slug' : 'realestate_site_slug';
+/**
+ * ✅ تخزين slug + template_key حسب القطاع داخل users
+ * sector: 'cars' | 'realestate'
+ */
+async function setUserSiteSlug(userId, sector, slug, template_key) {
+  const slugCol = sector === 'cars' ? 'cars_site_slug' : 'realestate_site_slug';
+  const templateCol =
+    sector === 'cars' ? 'cars_site_template_key' : 'realestate_site_template_key';
 
+  // template_key optional
   const res = await db.query(
     `UPDATE users
-     SET ${col} = $2
+     SET ${slugCol} = $2,
+         ${templateCol} = COALESCE($3, ${templateCol}),
+         updated_at = NOW()
      WHERE id = $1
-     RETURNING id, ${col}`,
-    [userId, slug || null]
+     RETURNING id, ${slugCol} AS site_slug, ${templateCol} AS site_template_key`,
+    [userId, slug || null, template_key || null]
   );
 
   return res.rows[0] || null;
@@ -144,5 +158,5 @@ module.exports = {
   updateUserProfile,
   setVerificationFlags,
   markUserNafathVerified,
-  setUserSiteSlug
+  setUserSiteSlug,
 };

@@ -33,8 +33,6 @@ function mapSiteRow(row) {
     social: settings.social || {},
     location: settings.location || {},
     about: settings.about || {},
-
-    // ✅ جديد
     heroContent: settings.heroContent || { title: '', desc: '' },
 
     created_at: row.created_at,
@@ -42,9 +40,9 @@ function mapSiteRow(row) {
   };
 }
 
-async function syncUserSlug(ownerId, sector, slug) {
+async function syncUserSlug(ownerId, sector, slug, template_key) {
   try {
-    await setUserSiteSlug(ownerId, sector, slug);
+    await setUserSiteSlug(ownerId, sector, slug, template_key);
   } catch (e) {
     console.error('syncUserSlug error:', e.message);
   }
@@ -65,19 +63,13 @@ async function requireOwnerSite(ownerId, sector) {
 }
 
 async function getSiteBySlug(slug) {
-  const result = await db.query(
-    `SELECT * FROM sites WHERE slug = $1 LIMIT 1`,
-    [slug]
-  );
+  const result = await db.query(`SELECT * FROM sites WHERE slug = $1 LIMIT 1`, [slug]);
   const row = result.rows[0];
   return row ? mapSiteRow(row) : null;
 }
 
 async function getSiteConfigBySlug(slug, { requirePublished = true } = {}) {
-  const res = await db.query(
-    `SELECT * FROM sites WHERE slug = $1 LIMIT 1`,
-    [slug]
-  );
+  const res = await db.query(`SELECT * FROM sites WHERE slug = $1 LIMIT 1`, [slug]);
   const row = res.rows[0];
   if (!row) return null;
   if (requirePublished && !row.is_published) return null;
@@ -106,7 +98,10 @@ async function upsertSiteForOwner(ownerId, {
   );
 
   const mapped = mapSiteRow(result.rows[0]);
-  await syncUserSlug(ownerId, sector, mapped.slug);
+
+  // ✅ خزّن slug + template_key بالبروفايل
+  await syncUserSlug(ownerId, sector, mapped.slug, mapped.template_key);
+
   return mapped;
 }
 
@@ -127,7 +122,10 @@ async function upsertSiteBasic(ownerId, { sector, slug, name, template_key }) {
   );
 
   const mapped = mapSiteRow(result.rows[0]);
-  await syncUserSlug(ownerId, sector, mapped.slug);
+
+  // ✅ خزّن slug + template_key بالبروفايل
+  await syncUserSlug(ownerId, sector, mapped.slug, mapped.template_key);
+
   return mapped;
 }
 
@@ -155,7 +153,7 @@ async function upsertSiteSettings(ownerId, {
   social = {},
   location = {},
   about = {},
-  heroContent = {}, // ✅
+  heroContent = {},
 }) {
   const safeHero = {
     title: heroContent?.title || '',
@@ -193,7 +191,8 @@ async function upsertSiteSettings(ownerId, {
   const mapped = result.rows[0] ? mapSiteRow(result.rows[0]) : null;
 
   if (mapped) {
-    await syncUserSlug(ownerId, sector, mapped.slug);
+    // ✅ إذا تغير slug من settings، خزنه كمان + template_key الحالي
+    await syncUserSlug(ownerId, sector, mapped.slug, mapped.template_key);
   }
 
   return mapped;
@@ -210,9 +209,7 @@ async function setSitePublish(ownerId, { sector, is_published }) {
   return result.rows[0] ? mapSiteRow(result.rows[0]) : null;
 }
 
-async function updateSiteAll(ownerId, {
-  sector, slug, name, template_key, is_published, theme, settings
-}) {
+async function updateSiteAll(ownerId, { sector, slug, name, template_key, is_published, theme, settings }) {
   if (template_key && !ALLOWED_TEMPLATES.includes(template_key)) {
     throw new Error('INVALID_TEMPLATE');
   }
@@ -247,7 +244,7 @@ async function updateSiteAll(ownerId, {
   const mapped = result.rows[0] ? mapSiteRow(result.rows[0]) : null;
 
   if (mapped) {
-    await syncUserSlug(ownerId, sector, mapped.slug);
+    await syncUserSlug(ownerId, sector, mapped.slug, mapped.template_key);
   }
 
   return mapped;
@@ -270,7 +267,10 @@ async function upsertSiteTemplate(ownerId, { sector, template_key }) {
   );
 
   const mapped = mapSiteRow(result.rows[0]);
-  await syncUserSlug(ownerId, sector, mapped.slug);
+
+  // ✅ حتى بالـ draft نخزن slug + template_key بالبروفايل
+  await syncUserSlug(ownerId, sector, mapped.slug, mapped.template_key);
+
   return mapped;
 }
 
