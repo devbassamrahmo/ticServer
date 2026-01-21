@@ -1,3 +1,4 @@
+// src/utils/jwt.js
 const jwt = require('jsonwebtoken');
 
 function signUserToken(user) {
@@ -7,7 +8,9 @@ function signUserToken(user) {
     is_admin: user.is_admin === true,
   };
 
-  return jwt.sign(payload, process.env.JWT_SECRET, { expiresIn: '7d' });
+  return jwt.sign(payload, process.env.JWT_SECRET, {
+    expiresIn: process.env.ACCESS_TOKEN_TTL || '15m',
+  });
 }
 
 function verifyToken(token) {
