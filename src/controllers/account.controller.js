@@ -15,7 +15,7 @@ const {
   createSubUser,
   toggleSubUser,
   deleteSubUser,
-  getSubUsers, // ✅ FIX: استيراد getSubUsers بدل subUserModel
+  getSubUsers,
 } = require('../models/subUser.model');
 
 const { completeStep } = require('../models/onboarding.model');
@@ -31,6 +31,13 @@ exports.getProfile = async (req, res) => {
 
     const documents = await getAccountDocumentsForUser(userId);
 
+    // ✅ template: خليه ياخد live من sites إذا موجود، وإلا fallback على المخزن بالـ users
+    const carsTemplate =
+      user.cars_site_template_key_live || user.cars_site_template_key || null;
+
+    const realestateTemplate =
+      user.realestate_site_template_key_live || user.realestate_site_template_key || null;
+
     return res.json({
       success: true,
       profile: {
@@ -42,13 +49,24 @@ exports.getProfile = async (req, res) => {
         phone: user.phone,
         account_type: user.account_type,
         sector: user.sector,
+
         cars_site_slug: user.cars_site_slug || null,
         realestate_site_slug: user.realestate_site_slug || null,
+
+        // ✅ NEW: templates
+        cars_site_template_key: carsTemplate,
+        realestate_site_template_key: realestateTemplate,
+
+        // ✅ NEW: publish states
+        cars_site_is_published: !!user.cars_site_is_published,
+        realestate_site_is_published: !!user.realestate_site_is_published,
+
         verifications: {
           nafath: user.nafath_verified,
           real_estate_license: user.real_estate_license_verified,
           car_license: user.car_license_verified,
         },
+
         documents,
       },
     });
@@ -293,7 +311,7 @@ exports.getSubUsers = async (req, res) => {
       pageSize,
       city,
       type,
-      status, // "active" | "inactive"
+      status,
     } = req.query;
 
     const result = await getSubUsers(

@@ -4,18 +4,53 @@ const db = require('../config/db');
 async function findUserByPhone(phone) {
   const result = await db.query(
     `SELECT
-        id, phone, full_name, account_type, sector, company_name, email, city,
-        COALESCE(is_admin, false) AS is_admin,
-        COALESCE(nafath_verified,false) AS nafath_verified,
-        COALESCE(real_estate_license_verified,false) AS real_estate_license_verified,
-        COALESCE(car_license_verified,false) AS car_license_verified,
+        u.id,
+        u.phone,
+        u.full_name,
+        u.account_type,
+        u.sector,
+        u.company_name,
+        u.email,
+        u.city,
 
-        cars_site_slug,
-        realestate_site_slug,
-        cars_site_template_key,
-        realestate_site_template_key
-     FROM users
-     WHERE phone = $1
+        COALESCE(u.is_admin, false) AS is_admin,
+        COALESCE(u.nafath_verified,false) AS nafath_verified,
+        COALESCE(u.real_estate_license_verified,false) AS real_estate_license_verified,
+        COALESCE(u.car_license_verified,false) AS car_license_verified,
+
+        -- stored in users (syncUserSlug)
+        u.cars_site_slug,
+        u.realestate_site_slug,
+        u.cars_site_template_key,
+        u.realestate_site_template_key,
+
+        -- ✅ source of truth from sites
+        (SELECT s.template_key
+           FROM sites s
+          WHERE s.owner_id = u.id AND s.sector = 'cars'
+          LIMIT 1
+        ) AS cars_site_template_key_live,
+
+        (SELECT s.template_key
+           FROM sites s
+          WHERE s.owner_id = u.id AND s.sector = 'realestate'
+          LIMIT 1
+        ) AS realestate_site_template_key_live,
+
+        (SELECT COALESCE(s.is_published, false)
+           FROM sites s
+          WHERE s.owner_id = u.id AND s.sector = 'cars'
+          LIMIT 1
+        ) AS cars_site_is_published,
+
+        (SELECT COALESCE(s.is_published, false)
+           FROM sites s
+          WHERE s.owner_id = u.id AND s.sector = 'realestate'
+          LIMIT 1
+        ) AS realestate_site_is_published
+
+     FROM users u
+     WHERE u.phone = $1
      LIMIT 1`,
     [phone]
   );
@@ -47,7 +82,56 @@ async function createUser(data) {
 
 async function findUserById(id) {
   const result = await db.query(
-    'SELECT * FROM users WHERE id = $1 LIMIT 1',
+    `SELECT
+        u.id,
+        u.phone,
+        u.full_name,
+        u.account_type,
+        u.sector,
+        u.company_name,
+        u.email,
+        u.city,
+
+        COALESCE(u.is_admin, false) AS is_admin,
+        COALESCE(u.nafath_verified,false) AS nafath_verified,
+        COALESCE(u.real_estate_license_verified,false) AS real_estate_license_verified,
+        COALESCE(u.car_license_verified,false) AS car_license_verified,
+
+        -- stored in users (syncUserSlug)
+        u.cars_site_slug,
+        u.realestate_site_slug,
+        u.cars_site_template_key,
+        u.realestate_site_template_key,
+
+        -- ✅ template from sites (source of truth)
+        (SELECT s.template_key
+           FROM sites s
+          WHERE s.owner_id = u.id AND s.sector = 'cars'
+          LIMIT 1
+        ) AS cars_site_template_key_live,
+
+        (SELECT s.template_key
+           FROM sites s
+          WHERE s.owner_id = u.id AND s.sector = 'realestate'
+          LIMIT 1
+        ) AS realestate_site_template_key_live,
+
+        -- ✅ published states from sites
+        (SELECT COALESCE(s.is_published, false)
+           FROM sites s
+          WHERE s.owner_id = u.id AND s.sector = 'cars'
+          LIMIT 1
+        ) AS cars_site_is_published,
+
+        (SELECT COALESCE(s.is_published, false)
+           FROM sites s
+          WHERE s.owner_id = u.id AND s.sector = 'realestate'
+          LIMIT 1
+        ) AS realestate_site_is_published
+
+     FROM users u
+     WHERE u.id = $1
+     LIMIT 1`,
     [id]
   );
   return result.rows[0] || null;
