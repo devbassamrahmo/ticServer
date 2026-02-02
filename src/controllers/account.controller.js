@@ -13,6 +13,7 @@ const {
 const {
   listSubUsers,
   createSubUser,
+  updateSubUser, // ✅ NEW
   toggleSubUser,
   deleteSubUser,
   getSubUsers,
@@ -246,6 +247,50 @@ exports.addSubUser = async (req, res) => {
     });
   } catch (err) {
     console.error('addSubUser error:', err);
+    return res.status(500).json({ success: false, message: 'خطأ في السيرفر' });
+  }
+};
+
+// ✅ NEW: update sub user
+exports.updateSubUser = async (req, res) => {
+  try {
+    const ownerId = req.user.id;
+    const { id } = req.params;
+    const { full_name, phone, email, city } = req.body;
+
+    // إذا ما بعت ولا حقل
+    if (
+      full_name === undefined &&
+      phone === undefined &&
+      email === undefined &&
+      city === undefined
+    ) {
+      return res.status(400).json({
+        success: false,
+        message: 'لازم تبعت على الأقل حقل واحد للتعديل',
+      });
+    }
+
+    const updated = await updateSubUser(ownerId, id, {
+      full_name,
+      phone,
+      email,
+      city,
+    });
+
+    if (!updated) {
+      return res.status(404).json({
+        success: false,
+        message: 'المستخدم الفرعي غير موجود أو لم يتم تعديل أي حقل',
+      });
+    }
+
+    return res.json({
+      success: true,
+      sub_user: updated,
+    });
+  } catch (err) {
+    console.error('updateSubUser error:', err);
     return res.status(500).json({ success: false, message: 'خطأ في السيرفر' });
   }
 };

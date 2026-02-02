@@ -21,6 +21,10 @@ router.post('/documents', accountController.uploadDocument);
 // المستخدمون الفرعيون
 router.get('/sub-users', accountController.getSubUsers);
 router.post('/sub-users', accountController.addSubUser);
+
+// ✅ NEW: تعديل المستخدم الفرعي
+router.put('/sub-users/:id', accountController.updateSubUser);
+
 router.post('/sub-users/:id/toggle', accountController.toggleSubUser);
 router.delete('/sub-users/:id', accountController.deleteSubUser);
 

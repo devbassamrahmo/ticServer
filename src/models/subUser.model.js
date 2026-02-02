@@ -117,6 +117,44 @@ async function createSubUser(ownerId, data) {
   return result.rows[0];
 }
 
+// ✅ NEW: update sub user (full_name, phone, email, city)
+async function updateSubUser(ownerId, subUserId, data = {}) {
+  const allowedFields = ['full_name', 'phone', 'email', 'city'];
+
+  const setParts = [];
+  const params = [];
+  let idx = 1;
+
+  for (const field of allowedFields) {
+    if (data[field] !== undefined) {
+      setParts.push(`${field} = $${idx++}`);
+      params.push(data[field]);
+    }
+  }
+
+  // ما في ولا حقل للتعديل
+  if (setParts.length === 0) {
+    return null;
+  }
+
+  // WHERE
+  params.push(subUserId);
+  const idParam = `$${idx++}`;
+
+  params.push(ownerId);
+  const ownerParam = `$${idx++}`;
+
+  const query = `
+    UPDATE sub_users
+    SET ${setParts.join(', ')}
+    WHERE id = ${idParam} AND owner_id = ${ownerParam}
+    RETURNING id, full_name, phone, email, city, is_active, created_at
+  `;
+
+  const result = await db.query(query, params);
+  return result.rows[0] || null;
+}
+
 async function toggleSubUser(ownerId, subUserId, isActive) {
   const result = await db.query(
     `UPDATE sub_users
@@ -142,6 +180,7 @@ async function deleteSubUser(ownerId, subUserId) {
 module.exports = {
   listSubUsers,
   createSubUser,
+  updateSubUser, // ✅ NEW
   toggleSubUser,
   deleteSubUser,
   getSubUsers,
